@@ -1,0 +1,18 @@
+{
+  "id": "mjl-pointcrawl",
+  "title": "Pointcrawl · MJl tools",
+  "description": "Регионы, маршруты, исследование карты и заявки на путешествия для D&D 5e.",
+  "version": "1.0.11",
+  "url": "https://github.com/MJl2517/dnd-point-crawl-2024",
+  "manifest": "https://raw.githubusercontent.com/MJl2517/dnd-point-crawl-2024/main/module.json",
+  "download": "https://raw.githubusercontent.com/MJl2517/dnd-point-crawl-2024/main/dist/mjl-pointcrawl.zip",
+  "authors": [{"name": "MJl tools"}],
+  "compatibility": {"minimum": "14.361", "verified": "14.361", "maximum": "14.999"},
+  "relationships": {
+    "systems": [{"id": "dnd5e", "type": "system", "compatibility": {"minimum": "5.3.3"}}],
+    "requires": [{"id": "socketlib", "type": "module", "compatibility": {"minimum": "1.1.4"}}]
+  },
+  "socket": true,
+  "esmodules": ["scripts/main.mjs"],
+  "styles": ["styles/pointcrawl.css"]
+}

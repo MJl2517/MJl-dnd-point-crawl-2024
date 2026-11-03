@@ -1,0 +1,6 @@
+dev/*
+!dev/setup.ps1
+!dev/package.ps1
+dist/*
+!dist/mjl-pointcrawl.zip
+node_modules/
