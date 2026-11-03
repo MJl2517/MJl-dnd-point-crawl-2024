@@ -1,7 +1,7 @@
 import {ID} from "./rules.mjs";
 import {state,privateData,connectSocket,request} from "./store.mjs";
 import {PointcrawlApp,TravelCentre,RequestWindow} from "./app.mjs";
-import {controls,preMove,validateGeometry,prepareRegion,redraw,canvasReady,canvasTearDown,useTool} from "./canvas.mjs";
+import {controls,preMove,arrivalBanner,validateGeometry,prepareRegion,redraw,canvasReady,canvasTearDown,useTool} from "./canvas.mjs";
 import {initializePrivate,loadPrivate} from "./private.mjs";
 
 Hooks.once("init",()=>{
@@ -18,6 +18,7 @@ Hooks.once("ready",async()=>{
 });
 Hooks.on("getSceneControlButtons",controls);
 Hooks.on("preMoveToken",preMove);
+Hooks.on("updateChatMessage",(message,changes)=>{arrivalBanner(message,changes).catch(console.error);});
 Hooks.on("preUpdateRegion",validateGeometry);
 Hooks.on("canvasReady",canvasReady);
 Hooks.on("canvasReady",()=>{if(game.ready&&game.users.activeGM?.isSelf&&state(canvas.scene).enabled)request("syncJournals",{},canvas.scene).catch(console.error);});

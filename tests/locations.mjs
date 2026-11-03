@@ -42,6 +42,8 @@ async function finishMotion(id,f,target) {
     const samples=await b.eval('__motion',s),origin=samples[0];
     assert(samples.some(p=>Math.abs(p.x-origin.x)>2&&Math.abs(p.x-end)>2),JSON.stringify(samples));
     await until(s,`Math.abs(canvas.scene.tokens.get('${f.token}').object.x-${end})<1`);
+    await until(s,`document.querySelector('#mjl-pointcrawl-arrival')?.textContent===${JSON.stringify(target.name)}`);
+    assert.equal(await b.eval('getComputedStyle(document.querySelector("#mjl-pointcrawl-arrival")).pointerEvents',s),'none');
     await b.eval('Hooks.off("updateToken",__track)',s);
   }
   return before;
@@ -69,6 +71,18 @@ try {
   await until(gm,`canvas.ready&&canvas.scene.id==='${f.scene}'`);
   await ev(gm,async f=>{await ui.controls.activate({control:'mjl-pointcrawl',tool:'inspect'});canvas.pan({x:1100,y:800,scale:.7});(await import('/modules/mjl-pointcrawl/scripts/app.mjs')).PointcrawlApp.open({regionId:f.one});},f);
   await until(gm,'!!document.querySelector("#mjl-pointcrawl-manager [data-form=region]")');
+  const themes=await ev(gm,()=>{
+    const app=document.querySelector('#mjl-pointcrawl-manager'),before=document.body.className,result=[];
+    for(const theme of ['theme-dark','theme-light']) {
+      document.body.classList.remove('theme-dark','theme-light');document.body.classList.add(theme);
+      const select=app.querySelector('[name=terrain]'),option=select.options[0],style=getComputedStyle(option);
+      result.push({theme,scheme:getComputedStyle(select).colorScheme,background:style.backgroundColor,color:style.color});
+    }
+    document.body.className=before;return result;
+  });
+  assert.equal(themes[0].scheme,'dark');assert.equal(themes[1].scheme,'light');
+  assert.notEqual(themes[0].background,themes[1].background);assert(themes.every(t=>t.background!==t.color&&!t.background.includes('rgba')));
+  pass('Native select options use opaque matching backgrounds and readable text in dark and light application themes');
   await b.eval('document.querySelector("#mjl-pointcrawl-manager [data-pc-action=location]:not([data-id])").click()',gm);
   await until(gm,'!!document.querySelector("[data-location-pick]")');
   await ev(gm,()=>{const form=document.querySelector('[data-location-pick]').form;form.elements.name.value='Родник';form.elements.description.value='Вода у старого дуба';form.elements.notes.value='SECRET_SPRING_LOC';form.elements.revealed.checked=true;form.querySelector('[data-location-pick]').click();});
@@ -125,14 +139,15 @@ try {
   await approveLocal(id,25);
   assert.equal(await b.eval('canvas.scene.getFlag("mjl-pointcrawl","state").active.seconds',player),1500);
   assert.equal(await ev(player,id=>!!document.querySelector(`#mjl-pointcrawl-request-${id} [data-pc-action=perform]`),id),false);
-  const before=await finishMotion(id,f,{x:1000,y:850});assert.equal(await b.eval('game.time.worldTime',gm),before+1500);
+  const before=await finishMotion(id,f,{x:1000,y:850,name:'Родник'});assert.equal(await b.eval('game.time.worldTime',gm),before+1500);
+  await b.screenshot('mjl-pointcrawl/dev/arrival-location-player.png',player);
   await assert.rejects(()=>send(gm,'finish',{requestId:id}),/не готова/);
   pass('Location click creates a request; GM supplies time, no navigation roll, both clients animate movement');
   await ev(player,async()=>{const m=await import('/modules/mjl-pointcrawl/scripts/app.mjs');for(const a of m.RequestWindow.windows.values())if(a.rendered)await a.close();m.TravelCentre.open();});
   await until(player,'!!document.querySelector("#mjl-pointcrawl-centre [data-pc-action=local]:not([data-id])")');
   await b.eval('document.querySelector("#mjl-pointcrawl-centre [data-pc-action=local]:not([data-id])").click()',player);
   id=await until(gm,'canvas.scene.getFlag("mjl-pointcrawl","state").active?.id');await approveLocal(id,10);
-  await finishMotion(id,f,{x:600,y:600});
+  await finishMotion(id,f,{x:600,y:600,name:'Зелёная долина'});
   pass('Travel centre supports returning from a location to the region centre through the same workflow');
   await ev(player,async f=>{const m=await import('/modules/mjl-pointcrawl/scripts/app.mjs');for(const a of [m.TravelCentre.instance,...m.RequestWindow.windows.values()])if(a?.rendered)await a.close();await canvas.scene.tokens.get(f.token).update({x:950,y:800});},f);
   for(const client of [gm,player]) {
@@ -145,10 +160,12 @@ try {
   await until(gm,`!!document.querySelector('#mjl-pointcrawl-request-${id} [data-form=approve]')`);
   await send(gm,'approve',{requestId:id,risk:false});
   await until(gm,`!!document.querySelector('#mjl-pointcrawl-request-${id} [data-pc-action=finish]')`);
-  await finishMotion(id,f,{x:1600,y:600});
+  await finishMotion(id,f,{x:1600,y:600,name:f.secretForest});
   assert.equal(await b.eval('canvas.scene.getFlag("mjl-pointcrawl","state").currentRegionId',player),f.two);
   pass('Inter-region arrival is also animated for GM and player');
   await b.screenshot('mjl-pointcrawl/dev/locations-player.png',player);
+  for(const s of [gm,player]) {await b.eval('globalThis.__arrivalReload=true;location.reload()',s);await b.until('!globalThis.__arrivalReload&&game?.ready&&canvas.ready',s,180000);assert.equal(await b.eval('!!document.querySelector("#mjl-pointcrawl-arrival")',s),false);}
+  pass('Arrival titles show the destination in both clients after movement, do not block clicks and do not replay after reload');
   const errors=b.events.filter(e=>e.method==='Runtime.exceptionThrown');assert.equal(errors.length,0,JSON.stringify(errors));pass('No uncaught JavaScript errors in location and movement workflows');report.success=true;report.fixture=f;
 } catch(e) {report.success=false;report.error=e.stack;console.error(e);process.exitCode=1;for(const [name,s] of [['locations-gm-failure',gm],['locations-player-failure',player]])if(s)await b.screenshot(`mjl-pointcrawl/dev/${name}.png`,s).catch(()=>{});
 } finally {await writeFile('mjl-pointcrawl/dev/locations-report.json',JSON.stringify(report,null,2));for(const id of contexts)await b.call('Target.disposeBrowserContext',{browserContextId:id}).catch(()=>{});b.close();}

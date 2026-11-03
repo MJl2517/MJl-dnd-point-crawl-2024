@@ -206,6 +206,24 @@ export function preMove(token,_movement,operation) {
   return false;
 }
 
+const announced=new Set();
+export async function arrivalBanner(message,changes) {
+  const r=changes.flags?.[ID]?.request,scene=canvas.scene;
+  if(!message.author?.isGM||message.getFlag(ID,"requestId")!==r?.id)return;
+  if(!game.ready||!scene||!state(scene).enabled||r?.sceneId!==scene.id||r.status!=="done"||!["travel","local","teleport"].includes(r.kind)||announced.has(r.id))return;
+  announced.add(r.id);
+  await partyToken(scene)?.object?.movementAnimationPromise?.catch(()=>{});
+  if(!canvas.ready||canvas.scene?.id!==scene.id)return;
+  const region=game.user.isGM?privateData(scene).regions[r.to??r.regionId]:null;
+  const title=(r.locationId?region?.locations.find(l=>l.id===r.locationId)?.name:region?.name)??r.destination?.replace(/^Центр: /,"");
+  if(!title)return;
+  document.getElementById(`${ID}-arrival`)?.remove();
+  const banner=document.createElement("div");banner.id=`${ID}-arrival`;banner.className="mjl-arrival";banner.setAttribute("role","status");banner.setAttribute("aria-live","polite");
+  const name=document.createElement("span");name.textContent=title;banner.append(name);document.body.append(banner);
+  const still=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  banner.animate([{opacity:0,transform:still?"none":"translateY(12px)"},{opacity:1,transform:"none",offset:.18},{opacity:1,transform:"none",offset:.76},{opacity:0,transform:still?"none":"translateY(-6px)"}],{duration:5000,easing:"ease-out"}).finished.then(()=>banner.remove(),()=>banner.remove());
+}
+
 export function validateGeometry(doc,changes) {
   if(!changes.shapes||!state(doc.parent).enabled||(!doc.getFlag(ID,"region")&&!doc.getFlag(ID,"draft")&&ui.controls.control?.name!==ID))return;
   try {
@@ -229,6 +247,7 @@ export function canvasReady() {
   redraw();
 }
 export function canvasTearDown() {
+  document.getElementById(`${ID}-arrival`)?.remove();
   if(stage)stage.off("pointerdowncapture",pointer);stage=null;
   overlay?.parent?.removeChild(overlay);overlay?.destroy({children:true});overlay=null;pick=null;
 }

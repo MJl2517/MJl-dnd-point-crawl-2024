@@ -73,3 +73,8 @@
 
 .mjl-region-list [data-region-search]>button{width:100%}.mjl-region-list [data-location-search]{padding-left:12px}.mjl-region-list [data-location-search]>button{width:100%;font-size:12px;color:var(--color-text-secondary)}
 .mjl-time-preview{padding:12px;border:1px solid var(--pc-line);border-radius:6px;line-height:1.6;font-size:13px}
+.mjl-app select,.mjl-dialog select{color-scheme:var(--color-scheme,light dark)}
+:is(.mjl-app,.mjl-dialog) select :is(option,optgroup){background-color:Canvas;color:CanvasText}
+.mjl-arrival{position:fixed;inset:16vh 0 auto;z-index:10000;display:grid;justify-items:center;gap:18px;padding:30px max(24px,8vw);pointer-events:none;color:#f5e6c4;text-align:center;background:linear-gradient(90deg,transparent,rgba(8,12,18,.88) 22%,rgba(8,12,18,.88) 78%,transparent);text-shadow:0 2px 8px #000}
+.mjl-arrival::before,.mjl-arrival::after{content:"";width:min(440px,65vw);height:1px;background:linear-gradient(90deg,transparent,#c4a872,transparent)}
+.mjl-arrival>span{max-width:min(1100px,90vw);font-family:"Palatino Linotype","Book Antiqua",Georgia,serif;font-size:clamp(26px,4vw,60px);font-weight:400;line-height:1.25;letter-spacing:.045em;overflow-wrap:anywhere}
