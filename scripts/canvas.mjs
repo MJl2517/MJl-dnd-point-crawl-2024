@@ -13,6 +13,22 @@ function label(text,x,y,name) {
   const l=new PIXI.Text(text,{fontFamily:"Arial",fontSize:17,fill:0xf6e8cc,stroke:0x10151a,strokeThickness:4,align:"center"});
   l.anchor.set(.5,0);l.position.set(x,y);l.eventMode="none";l.name=name;return l;
 }
+function routeBadge(edge,seconds,color,x,y) {
+  const badge=new PIXI.Container();
+  badge.name=`route-time-${edge.id}`;
+  badge.eventMode="none";
+  badge.position.set(x,y);
+  const duration=new PIXI.Text(`${secondsLabel(seconds)}${edge.road?" · дорога":""}`,{
+    fontFamily:"Arial",fontSize:20,fontWeight:"bold",fill:color
+  });
+  duration.name="duration";
+  duration.anchor.set(.5);
+  const width=Math.ceil(duration.width)+24, height=Math.ceil(duration.height)+10;
+  const background=new PIXI.Graphics().lineStyle(2,color).beginFill(0x101921)
+    .drawRoundedRect(-width/2,-height/2,width,height,height/2).endFill();
+  badge.addChild(background,duration);
+  return badge;
+}
 function clearPickNotice(pending) {for(const n of [pending?.notice,pending?.warning])if(n)ui.notifications.remove(n);}
 function cancelPick() {const pending=pick;pick=null;clearPickNotice(pending);if(pending?.onCancel)run(pending.onCancel);if(pending)redraw();}
 async function visitLocation(locationId=null) {
@@ -43,15 +59,20 @@ export function redraw() {
   const available=new Set([s.currentRegionId]);
   for(const e of edges) {if(e.from===s.currentRegionId)available.add(e.to);if(e.to===s.currentRegionId)available.add(e.from);}
   const visible=regions.filter(r=>r.center&&(secrets||r.explored||available.has(r.id)));
-  const lines=new PIXI.Graphics();lines.eventMode="none";
+  const outline=new PIXI.Graphics(),lines=new PIXI.Graphics();
+  outline.eventMode=lines.eventMode="none";
+  overlay.addChild(outline,lines);
+  const centers=new Map(visible.map(r=>[r.id,r.center]));
+  const publishedRoutes=new Map(s.routes.map(r=>[r.id,r]));
   for(const e of edges) {
-    const a=visible.find(r=>r.id===e.from),b=visible.find(r=>r.id===e.to);
+    const a=centers.get(e.from),b=centers.get(e.to);
     if(!a||!b)continue;
-    lines.lineStyle(3,0xc4a872,.8).moveTo(a.center.x,a.center.y).lineTo(b.center.x,b.center.y);
-    const seconds=e.normalSeconds??s.routes.find(r=>r.id===e.id)?.normalSeconds??e.seconds;
-    overlay.addChild(label(`${secondsLabel(seconds)}${e.road?" · дорога":""}`,(a.center.x+b.center.x)/2,(a.center.y+b.center.y)/2-22,`route-time-${e.id}`));
+    const color=e.road?0xf3cb7e:0xc3dcee, width=e.road?7:5;
+    outline.lineStyle(width+4,0x101921).moveTo(a.x,a.y).lineTo(b.x,b.y);
+    lines.lineStyle(width,color).moveTo(a.x,a.y).lineTo(b.x,b.y);
+    const seconds=e.normalSeconds??publishedRoutes.get(e.id)?.normalSeconds??e.seconds;
+    overlay.addChild(routeBadge(e,seconds,color,(a.x+b.x)/2,(a.y+b.y)/2));
   }
-  overlay.addChild(lines);
   for(const r of visible) {
     const container=new PIXI.Container();container.position.set(r.center.x,r.center.y);
     // Markers must not cover the party token's drag handle on the native Tokens layer.

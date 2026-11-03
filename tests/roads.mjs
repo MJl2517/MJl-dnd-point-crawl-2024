@@ -40,8 +40,8 @@ try{
  assert(!(await markers(player)).includes(`location-point-${f.hidden}`));pass('Teleport dialog lists permitted targets without routes; GM arrival uses native displace, no time or navigation and keeps secrets');
  await send(gm,'route',{from:f.one,to:f.two,seconds:3600,risk:true,road:true});
  await until(player,"canvas.scene.getFlag('mjl-pointcrawl','state').routes.some(r=>r.road&&r.normalSeconds===3600)");
- await until(gm,"canvas.stage.getChildByName('mjl-pointcrawl').children.some(c=>c.name?.startsWith('route-time-')&&c.text.includes('1 ч')&&c.text.includes('дорога'))");
- const labels=await ev(gm,()=>canvas.stage.getChildByName('mjl-pointcrawl').children.filter(c=>c.name?.startsWith('route-time-')).map(c=>c.text));assert(labels.some(t=>t.includes('1 ч')&&t.includes('дорога')));
+ await until(gm,"canvas.stage.getChildByName('mjl-pointcrawl').children.some(c=>c.name?.startsWith('route-time-')&&c.getChildByName('duration').text.includes('1 ч')&&c.getChildByName('duration').text.includes('дорога'))");
+ const labels=await ev(gm,()=>canvas.stage.getChildByName('mjl-pointcrawl').children.filter(c=>c.name?.startsWith('route-time-')).map(c=>c.getChildByName('duration').text));assert(labels.some(t=>t.includes('1 ч')&&t.includes('дорога')));
  await closeWindows(gm);await closeWindows(player);await b.screenshot('mjl-pointcrawl/dev/roads-gm.png',gm);await b.screenshot('mjl-pointcrawl/dev/roads-player.png',player);
  // Reload both clients to check persistence of map status and final request.
  for(const s of [gm,player]){await b.call('Network.enable',{},s);await b.call('Network.setCacheDisabled',{cacheDisabled:true},s);await b.eval('globalThis.__reloading=true;location.reload()',s);await b.until('!globalThis.__reloading&&game?.ready&&canvas.ready',s,180000);}

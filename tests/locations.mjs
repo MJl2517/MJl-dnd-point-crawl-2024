@@ -121,7 +121,7 @@ try {
   for(const secret of [f.secretForest,'SECRET_CAVE_LOC','SECRET_NOTES_LOC','SECRET_SPRING_LOC'])assert(!publicData.includes(secret),secret);
   pass('Player has travel and hub controls; palette and region selectors are hidden and secrets remain private');
   assert.equal((await marker(player,`location-name-${spring.id}`))?.text,'Родник');
-  const routeLabel=await ev(player,()=>canvas.stage.getChildByName('mjl-pointcrawl').children.filter(c=>c.name?.startsWith('route-time-')).map(c=>c.text));assert.deepEqual(routeLabel,['1 ч 30 мин']);
+  const routeLabel=await ev(player,()=>canvas.stage.getChildByName('mjl-pointcrawl').children.filter(c=>c.name?.startsWith('route-time-')).map(c=>c.getChildByName('duration').text));assert.deepEqual(routeLabel,['1 ч 30 мин']);
   await send(gm,'region',{regionId:f.one,values:{showName:false}});
   await send(gm,'location',{regionId:f.one,locationId:spring.id,values:{...spring,showName:false}});
   await until(player,`!canvas.scene.getFlag('mjl-pointcrawl','state').regions.find(r=>r.id==='${f.one}').showName`);
