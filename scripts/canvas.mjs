@@ -79,7 +79,9 @@ export function redraw() {
     // Markers must not cover the party token's drag handle on the native Tokens layer.
     container.name=`region-point-${r.id}`;container.eventMode=ui.controls.control?.name===ID&&!ui.controls.tool?.creation&&!pick?"static":"none";container.cursor="pointer";container.hitArea=new PIXI.Circle(0,0,22);
     const isHere=r.id===s.currentRegionId;
-    const dot=new PIXI.Graphics().lineStyle(3,isHere?0xf5dd91:0xc4a872).beginFill(isHere?0x6e5530:0x202a32).drawCircle(0,0,isHere?15:12).endFill();container.addChild(dot);
+    const color=(secrets||r.explored)?canvas.scene.regions.get(r.id)?.color:null;
+    const fill=color==null?(isHere?0x6e5530:0x202a32):Number(color);
+    const dot=new PIXI.Graphics().lineStyle(3,isHere?0xf5dd91:0xc4a872).beginFill(fill).drawCircle(0,0,isHere?15:12).endFill();container.addChild(dot);
     const title=secrets||r.explored?r.name:"?";
     if(r.showName!==false)container.addChild(label(title,0,20,`region-name-${r.id}`));
     container.on("pointerdown",e=>e.stopPropagation());

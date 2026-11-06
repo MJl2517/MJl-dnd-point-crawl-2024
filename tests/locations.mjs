@@ -62,7 +62,7 @@ try {
     await m.request('enable',{enabled:true},scene);
     await m.request('region',{regionId:one.id,values:{name:'Зелёная долина',center:{x:600,y:600},explored:true}},scene);
     const secretForest=`SECRET_FOREST_LOC_${scene.id}`;
-    await m.request('region',{regionId:two.id,values:{name:secretForest,center:{x:1600,y:600}}},scene);
+    await m.request('region',{regionId:two.id,values:{name:secretForest,center:{x:1600,y:600},color:'#d33b99'}},scene);
     await m.request('location',{regionId:one.id,values:{name:'SECRET_CAVE_LOC',notes:'SECRET_NOTES_LOC',description:'',x:700,y:1000,revealed:false,color:'#b74fe7'}},scene);
     await m.request('route',{from:one.id,to:two.id,seconds:5400,risk:false},scene);
     const [token]=await scene.createEmbeddedDocuments('Token',[(await group.getTokenDocument({x:550,y:550,width:1,height:1})).toObject()]);await m.request('party',{tokenId:token.id},scene);
@@ -80,6 +80,20 @@ try {
   pass('GM opens and closes the native region palette from the Pointcrawl toolbar');
   await ev(gm,async f=>{await ui.controls.activate({control:'mjl-pointcrawl',tool:'inspect'});canvas.pan({x:1100,y:800,scale:.7});(await import('/modules/mjl-pointcrawl/scripts/app.mjs')).PointcrawlApp.open({regionId:f.one});},f);
   await until(gm,'!!document.querySelector("#mjl-pointcrawl-manager [data-form=region]")');
+  const regionColor=await ev(gm,f=>{
+    const form=document.querySelector('#mjl-pointcrawl-manager [data-form=region]'),picker=form.querySelector('color-picker');
+    const initial=picker.value;
+    picker.closest('details').open=true;
+    const input=picker.querySelector('input[type=color]');input.value='#3468d4';input.dispatchEvent(new Event('change',{bubbles:true}));
+    form.requestSubmit();
+    return {initial,native:canvas.scene.regions.get(f.one).color.css};
+  },f);
+  assert.equal(regionColor.initial,regionColor.native);
+  await until(gm,`canvas.scene.regions.get('${f.one}').color.css==='#3468d4'`);
+  await assert.rejects(()=>send(gm,'region',{regionId:f.one,values:{color:'red'}}),/#RRGGBB/);
+  assert.equal(await ev(gm,f=>canvas.scene.regions.get(f.one).color.css,f),'#3468d4');
+  await until(gm,`document.querySelector('#mjl-pointcrawl-manager color-picker')?.value==='#3468d4'`);
+  pass('Region settings read and update the native boundary color and reject invalid colors');
   const themes=await ev(gm,()=>{
     const app=document.querySelector('#mjl-pointcrawl-manager'),before=document.body.className,result=[];
     for(const theme of ['theme-dark','theme-light']) {
@@ -124,6 +138,10 @@ try {
   pass('Location is placed with a real map click and preserves its name, description and secret notes');
   const context=(await b.call('Target.createBrowserContext')).browserContextId;contexts.push(context);player=await join('Pointcrawl Player',context);
   await ev(player,async()=>{await ui.controls.activate({control:'mjl-pointcrawl'});canvas.pan({x:1100,y:800,scale:.7});});
+  const regionFill=(s,id)=>ev(s,id=>canvas.stage.getChildByName('mjl-pointcrawl')?.getChildByName(`region-point-${id}`)?.children[0].geometry.graphicsData[0].fillStyle.color,id);
+  assert.equal(await regionFill(gm,f.two),0xd33b99);
+  assert.equal(await regionFill(player,f.one),0x3468d4);
+  assert.equal(await regionFill(player,f.two),0x202a32);
   await ev(player,async()=>{for(let i=0;i<3;i++){await ui.controls.activate({control:'tokens'});await ui.controls.activate({control:'mjl-pointcrawl',tool:'travel'});}});
   assert.equal(await b.eval('!!document.querySelector("[data-tool=togglePalette], [data-tool=inspect], [data-tool=select]")',player),false);
   assert.equal(await b.eval('ui.controls.tool.name',player),'travel');
@@ -173,6 +191,8 @@ try {
   await send(gm,'approve',{requestId:id,risk:false});
   await until(gm,`!!document.querySelector('#mjl-pointcrawl-request-${id} [data-pc-action=finish]')`);
   await finishMotion(id,f,{x:1600,y:600,name:f.secretForest});
+  assert.equal(await regionFill(player,f.two),0xd33b99);
+  pass('Players see the center color of a region after discovery');
   assert.equal(await b.eval('canvas.scene.getFlag("mjl-pointcrawl","state").currentRegionId',player),f.two);
   pass('Inter-region arrival is also animated for GM and player');
   await b.screenshot('mjl-pointcrawl/dev/locations-player.png',player);

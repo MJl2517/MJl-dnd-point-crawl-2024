@@ -360,7 +360,8 @@ export async function processRequest(args,senderId) {
   }
   if(args.action==="region") {
     gmOnly(user); const doc=scene.regions.get(args.regionId); need(doc,"Сначала нарисуйте границу.");
-    const old=data.regions[doc.id], values=args.values??{};
+    const old=data.regions[doc.id], {color,...values}=args.values??{};
+    need(color===undefined||color===""||typeof color==="string"&&/^#[0-9a-f]{6}$/i.test(color),"Укажите цвет региона в формате #RRGGBB.");
     const terrain=values.terrain??old?.terrain??"forest"; need(TERRAIN[terrain],"Неизвестная местность.");
     const r={...(old??regionDraft(doc,terrain)),...values,terrain};
     r.id=doc.id; r.name=text(r.name,"Название",200).trim(); need(r.name,"Укажите название региона.");
@@ -369,7 +370,7 @@ export async function processRequest(args,senderId) {
     need(PACE[r.maxPace],"Укажите максимальный темп.");
     r.detection=text(r.detection,"Дистанция обнаружения",100); r.equipped=!!r.equipped; r.explored=!!r.explored;r.showName=r.showName!==false;
     const fitted=fitRegion(scene,doc.shapes,doc.id,r);
-    await doc.update({...(fitted.changed?{shapes:fitted.shapes}:{}),name:r.explored?r.name:"Неизвестный регион",ownership:{default:0},[`flags.${ID}.region`]:true,[`flags.${ID}.draft`]:false});
+    await doc.update({...(fitted.changed?{shapes:fitted.shapes}:{}),...(color?{color}:{}),name:r.explored?r.name:"Неизвестный регион",ownership:{default:0},[`flags.${ID}.region`]:true,[`flags.${ID}.draft`]:false});
     data.regions[doc.id]=r;
     await persist(scene,data); return;
   }

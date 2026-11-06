@@ -207,7 +207,8 @@ export class PointcrawlApp extends ApplicationV2 {
   }
   regionForm(r) {
     const terrain=`<div class="mjl-form-grid"><label>Местность<select name="terrain">${options(TERRAIN,r.terrain)}</select></label><label>Максимальный темп<select name="maxPace">${options(PACE,r.maxPace)}</select></label>${field("Сл. навигации","navigationDC",r.navigationDC,"number",'min="0" max="100"')}${field("Сл. поиска","searchDC",r.searchDC,"number",'min="0" max="100"')}${field("Сл. пропитания","forageDC",r.forageDC,"number",'min="0" max="100"')}${field("Обнаружение, футы","detection",r.detection)}</div><label class="mjl-check"><input type="checkbox" name="equipped" ${checked(r.equipped)}>Снаряжение для быстрого темпа в арктике</label>`;
-    const map=`<label class="mjl-check"><input type="checkbox" name="explored" ${checked(r.explored)}>Регион открыт игрокам</label><label class="mjl-check"><input type="checkbox" name="showName" ${checked(r.showName!==false)}>Название центра на карте</label><div class="mjl-grid-buttons">${button("center",r.center?"Переместить центр":"Поставить центр",`data-id="${r.id}"`)}${button("editBoundary","Изменить границу",`data-id="${r.id}"`)}</div><div class="mjl-grid-buttons">${button("reposition","Переставить группу сюда",`data-id="${r.id}"`)}${button("preview","Вид игроков")}</div><p class="mjl-muted">Пересечения обрезаются по соседним регионам. Центр и локации должны оставаться внутри границы.</p>`;
+    const color=this.scene.regions.get(r.id)?.color?.css;
+    const map=`<label>Цвет региона<color-picker name="color" value="${esc(color)}"></color-picker></label><label class="mjl-check"><input type="checkbox" name="explored" ${checked(r.explored)}>Регион открыт игрокам</label><label class="mjl-check"><input type="checkbox" name="showName" ${checked(r.showName!==false)}>Название центра на карте</label><div class="mjl-grid-buttons">${button("center",r.center?"Переместить центр":"Поставить центр",`data-id="${r.id}"`)}${button("editBoundary","Изменить границу",`data-id="${r.id}"`)}</div><div class="mjl-grid-buttons">${button("reposition","Переставить группу сюда",`data-id="${r.id}"`)}${button("preview","Вид игроков")}</div><p class="mjl-muted">Пересечения обрезаются по соседним регионам. Центр и локации должны оставаться внутри границы.</p>`;
     const locations=`${r.locations.map(l=>`<div class="mjl-row"><div><strong>${esc(l.name)}</strong><small>${l.revealed?"Открыта игрокам":"Скрыта"} · Сл. ${l.dc??r.searchDC}</small></div>${button("location","Изменить",`data-id="${l.id}"`)}</div>`).join("")}<div class="mjl-actions">${button("location","Добавить локацию")}</div>`;
     return `<form data-form="region" data-id="${r.id}" class="mjl-region-form">${field("Название региона","name",r.name,"text",'maxlength="200" required')}
       ${this.fold("terrain",`Местность и проверки <small>${esc(TERRAIN[r.terrain]?.name??"")}</small>`,terrain)}
@@ -232,7 +233,7 @@ export class PointcrawlApp extends ApplicationV2 {
   async submit(form) {
     const f=fdata(form);
     if(form.dataset.form==="region") {
-      const values={...f,equipped:form.elements.equipped.checked,explored:form.elements.explored.checked,showName:form.elements.showName.checked};
+      const values={...f,color:form.querySelector("color-picker").value,equipped:form.elements.equipped.checked,explored:form.elements.explored.checked,showName:form.elements.showName.checked};
       await request("region",{regionId:form.dataset.id,values});
     } else if(form.dataset.form==="journey") {
       await request("journeySettings",{hours:f.hours,minutes:f.minutes,profile:{mode:f.mode,speed:f.speed,mph:f.mph,ignoreTerrain:form.elements.ignoreTerrain.checked,slower:form.elements.slower.checked}},this.scene);
