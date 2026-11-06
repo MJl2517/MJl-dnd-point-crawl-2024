@@ -10,6 +10,10 @@ const field=(label,name,value,type="text",attrs="")=>`<label>${label}<input name
 const area=(label,name,value)=>`<label>${label}<textarea name="${name}" rows="4">${esc(value)}</textarea></label>`;
 const checked=v=>v?"checked":"";
 const fdata=form=>Object.fromEntries(new FormData(form));
+function participantChip(participant,offline) {
+  const src=offline?`modules/${ID}/styles/offline-character.svg`:participant.img;
+  return `<span class="mjl-chip">${src?`<img src="${esc(src)}" alt="">`:""}${esc(participant.name)}</span>`;
+}
 function timePreview(form,calculate) {
   const output=form.querySelector('[data-time-preview]');
   const update=()=>{try{output.textContent=calculate(form);}catch(e){output.textContent=e.message;}};
@@ -149,7 +153,7 @@ export class PointcrawlApp extends ApplicationV2 {
     const guide=`<form data-form="guide" class="mjl-guide"><label>Проводник по умолчанию<select name="guide" ${!canChooseGuide||s.active?"disabled":""}>${options({"":"Выбирать в заявке",...Object.fromEntries(pcs.map(a=>[a.id,a.name]))},guideId)}</select></label><button type="submit" ${!canChooseGuide||s.active?"disabled":""}>Назначить</button></form>`;
     const locationRows=locations.map(l=>`<div class="mjl-row"><div><strong>${esc(l.name)}</strong>${game.user.isGM&&!l.revealed?'<small>Скрыта от игроков</small>':""}</div><div class="mjl-row-actions">${this.noteButton(here.id,l.id)}${button("local","В путь",`data-id="${l.id}" ${disabled} class="mjl-primary"`)}</div></div>`).join("");
     return `<div class="mjl-two"><section><article class="mjl-panel"><div class="mjl-section-heading"><h3>Текущий регион</h3>${here&&(game.user.isGM||here.explored)?this.noteButton(here.id):""}</div><h2>${esc(here?(here.name??"Неизвестный регион"):"Группа не назначена")}</h2>${!here?'<p class="mjl-muted">Мастер должен назначить токен группы внутри региона.</p>':""}
-      <div class="mjl-party">${pcs.map(a=>`<span class="mjl-chip"><img src="${esc(a.img)}" alt="">${esc(a.name)}</span>`).join("")}</div>${guide}<p data-journey-status>В пути: <strong>${secondsLabel(s.journey?.seconds??0)} / 8 ч</strong></p>${(s.journey?.seconds??0)>=TRAVEL_LIMIT?'<p class="mjl-error">Предел обычного перехода достигнут. Следующая заявка потребует отдыха или марша.</p>':""}${game.user.isGM&&partyToken(scene)?this.fold("journey","Передвижение и счётчик",this.journeySettings(scene)):""}</article>
+      <div class="mjl-party">${pcs.map(a=>participantChip(a,s.offline)).join("")}</div>${guide}<p data-journey-status>В пути: <strong>${secondsLabel(s.journey?.seconds??0)} / 8 ч</strong></p>${(s.journey?.seconds??0)>=TRAVEL_LIMIT?'<p class="mjl-error">Предел обычного перехода достигнут. Следующая заявка потребует отдыха или марша.</p>':""}${game.user.isGM&&partyToken(scene)?this.fold("journey","Передвижение и счётчик",this.journeySettings(scene)):""}</article>
       <article class="mjl-panel"><h3>Действия партии</h3><div class="mjl-actors">${actorCheck||"Нет доступных персонажей"}</div><label>Темп<select name="pace" ${s.journey?.profile?.mode==="vehicle"?"disabled":""}>${options(PACE,this.pace)}</select></label><div class="mjl-grid-buttons">${["short","long","search","forage"].map(k=>button("activity",ACTIONS[k],`data-kind="${k}" ${disabled}`)).join("")}${button("teleport","Телепортация",`${disabled} class="mjl-wide"`)}</div><small>Поиск и сбор — по часу после одобрения мастера. Пропитание — раз в сутки на героя.</small></article></section>
       <section><article class="mjl-panel"><h3>Доступные выходы</h3><section class="mjl-exits-group" data-exits="locations"><h4>Локации внутри региона</h4>${locationRows||'<p class="mjl-muted">Нет открытых локаций.</p>'}${here?`<div class="mjl-row"><strong>Центр региона</strong>${button("local","Вернуться",`${disabled} title="Вернуться к центру региона"`)}</div>`:""}</section><section class="mjl-exits-group" data-exits="regions"><h4>Соседние регионы</h4>${routeRows||'<p class="mjl-muted">Нет маршрутов из текущего региона.</p>'}</section></article>${s.active?`<article class="mjl-panel"><h3>Текущая заявка</h3>${this.requestSummary(s.active)}</article>`:""}</section></div>`;
   }
@@ -158,9 +162,11 @@ export class PointcrawlApp extends ApplicationV2 {
   }
   party(scene) {
     const s=state(scene),token=partyToken(scene),d=privateData(scene);
+    const offlineRoster=d.offline?.roster??[];
     const offlineSettings=`<form data-form="offline"><fieldset ${s.active?"disabled":""}>
       <label class="mjl-check"><input type="checkbox" name="enabled" ${checked(s.offline)}>Офлайн-режим</label>
       ${area("Участники за столом, по одному имени на строку","names",d.offline?.roster.map(p=>p.name).join("\n")??"")}
+      ${s.offline&&offlineRoster.length?`<div class="mjl-party">${offlineRoster.map(p=>participantChip(p,true)).join("")}</div>`:""}
       <p class="mjl-muted">Мастер вводит результаты бросков вручную. Токен актёра «Группа» может быть пустым. Пустой список ведёт одну запись «Группа».</p>
       <div class="mjl-actions"><button type="submit">Сохранить режим</button></div>
     </fieldset></form>`;
@@ -196,7 +202,7 @@ export class PointcrawlApp extends ApplicationV2 {
       const can=(gm||!offline&&game.actors.get(a.id)?.isOwner&&(!r.assignedUsers?.[a.id]||r.assignedUsers[a.id]===game.user.id))&&r.status==="approved"&&needsParticipant(r);
       const rest=["short","long"].includes(r.kind);
       const label=offline?(rest?"Подтвердить отдых":"Ввести результат"):(rest?"Отдыхать":"Бросить");
-      return `<div class="mjl-row"><div><strong>${esc(a.name)}</strong><small>${r.status==="pending"?"Ждёт решения мастера":!needsParticipant(r)?"Бросок не требуется":out?esc(out.label):running?"Выполняется / ожидает восстановления":"Ожидает"}</small>${assigned?`<small>Игрок: ${esc(assigned.name)}</small>`:""}</div><div class="mjl-row-actions">${can&&!out&&!running?button(offline?"manualRoll":"perform",label,`data-id="${r.id}" data-actor="${a.id}" data-step="${r.step??0}" class="mjl-primary"`):""}${gm&&running?button("recoverRoll","Проверить попытку",`data-id="${r.id}" data-actor="${a.id}"`):""}</div></div>`;
+      return `<div class="mjl-row"><div><strong>${offline?participantChip(a,true):esc(a.name)}</strong><small>${r.status==="pending"?"Ждёт решения мастера":!needsParticipant(r)?"Бросок не требуется":out?esc(out.label):running?"Выполняется / ожидает восстановления":"Ожидает"}</small>${assigned?`<small>Игрок: ${esc(assigned.name)}</small>`:""}</div><div class="mjl-row-actions">${can&&!out&&!running?button(offline?"manualRoll":"perform",label,`data-id="${r.id}" data-actor="${a.id}" data-step="${r.step??0}" class="mjl-primary"`):""}${gm&&running?button("recoverRoll","Проверить попытку",`data-id="${r.id}" data-actor="${a.id}"`):""}</div></div>`;
     }).join("");
     if(gm&&r.kind==="search"&&r.status==="approved"&&Object.keys(r.outcomes).length&&!r.revealedId) {
       const region=data.regions[r.regionId],total=Math.max(...Object.values(r.outcomes).map(o=>o.total??-Infinity));
