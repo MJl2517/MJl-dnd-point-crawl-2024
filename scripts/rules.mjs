@@ -17,6 +17,17 @@ export const ACTIONS = {travel: "Переход", local: "Переход вну�
 export const STATUS = {pending: "Ждёт решения мастера", approved: "Разрешено — ожидаются участники", camp:"Предел дневного перехода — отдых или марш", suspended:"Ожидает завершения отдыха в пути", committing: "Завершение — требуется проверка", done: "Завершено", rejected: "Отклонено"};
 export const clone = value => structuredClone(value);
 export const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"})[c]);
+export function unknownExitLabels(state) {
+  const unknown=new Set(state.regions.filter(r=>r.center&&!r.explored).map(r=>r.id));
+  const here=state.currentRegionId;
+  const exits=state.routes.filter(r=>r.from===here||r.to===here);
+  const labels=new Map();
+  exits.forEach((r,i)=>{
+    const id=r.from===here?r.to:r.from;
+    if(unknown.has(id))labels.set(id,`?${i+1}`);
+  });
+  return labels;
+}
 export function need(condition, message) { if (!condition) throw Error(message); }
 export function number(value, label, min=0, max=1e9, integer=false) {
   need(value !== "" && value !== null && typeof value !== "boolean", `${label}: требуется число.`);

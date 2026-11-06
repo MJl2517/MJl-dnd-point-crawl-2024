@@ -1,9 +1,10 @@
-import {ID, need, secondsLabel} from "./rules.mjs";
+import {ID, need, secondsLabel, unknownExitLabels} from "./rules.mjs";
 import {state,privateData,partyToken,participants,regionAt,request} from "./store.mjs";
 import {PointcrawlApp,TravelCentre,RequestWindow} from "./app.mjs";
 import {fitRegion,shapeTree,subtractPaths,drawTree} from "./geometry.mjs";
 
 let overlay,stage,pick=null;
+let focusedExit,focusTimer;
 let paletteWork=Promise.resolve();
 export let preview=false;
 const notify=error=>{ui.notifications.error(`Pointcrawl: ${error.message}`);console.error(ID,error);};
@@ -57,6 +58,7 @@ export function redraw() {
   const secrets=game.user.isGM&&!preview?privateData(canvas.scene):null;
   const regions=secrets?Object.values(secrets.regions).filter(Boolean):s.regions;
   const edges=secrets?secrets.routes:s.routes;
+  const exitLabels=unknownExitLabels(s);
   const available=new Set([s.currentRegionId]);
   for(const e of edges) {if(e.from===s.currentRegionId)available.add(e.to);if(e.to===s.currentRegionId)available.add(e.from);}
   const visible=regions.filter(r=>r.center&&(secrets||r.explored||available.has(r.id)));
@@ -82,8 +84,19 @@ export function redraw() {
     const color=(secrets||r.explored)?canvas.scene.regions.get(r.id)?.color:null;
     const fill=color==null?(isHere?0x6e5530:0x202a32):Number(color);
     const dot=new PIXI.Graphics().lineStyle(3,isHere?0xf5dd91:0xc4a872).beginFill(fill).drawCircle(0,0,isHere?15:12).endFill();container.addChild(dot);
+    if(focusedExit===r.id&&exitLabels.has(r.id)) {
+      const ring=new PIXI.Graphics().lineStyle(8,0x101921).drawCircle(0,0,29)
+        .lineStyle(4,0xffdb87).drawCircle(0,0,29);
+      ring.name=`focused-exit-${r.id}`;ring.eventMode="none";container.addChild(ring);
+    }
+    const exitLabel=exitLabels.get(r.id);
+    if(exitLabel) {
+      const caption=label(exitLabel,0,20,`region-exit-${r.id}`);
+      caption.style.fontSize=22;caption.style.fontWeight="bold";caption.style.fill=0xf3cb7e;
+      container.addChild(caption);
+    }
     const title=secrets||r.explored?r.name:"?";
-    if(r.showName!==false)container.addChild(label(title,0,20,`region-name-${r.id}`));
+    if(r.showName!==false&&(!exitLabel||secrets))container.addChild(label(title,0,exitLabel?48:20,`region-name-${r.id}`));
     container.on("pointerdown",e=>e.stopPropagation());
     container.on("pointertap",event=>{event.stopPropagation();run(()=>selectRegion(r.id));});
     overlay.addChild(container);
@@ -147,7 +160,17 @@ function pointer(event) {
   }
 }
 
-export async function useTool({action,regionId,onPick,onCancel}) {
+export async function useTool({action,regionId,sceneId,onPick,onCancel}) {
+  if(action==="focusExit") {
+    if(canvas.scene?.id!==sceneId)return;
+    const s=state(canvas.scene),target=s.regions.find(r=>r.id===regionId);
+    need(s.enabled&&unknownExitLabels(s).has(regionId),"Этот выход уже недоступен.");
+    clearTimeout(focusTimer);
+    focusedExit=regionId;redraw();
+    focusTimer=setTimeout(()=>{focusedExit=null;redraw();},4500);
+    await canvas.animatePan({x:target.center.x,y:target.center.y,duration:300});
+    return;
+  }
   if(action==="preview") {preview=!preview;redraw();ui.notifications.info(preview?"Pointcrawl: предпросмотр вида игроков включён.":"Pointcrawl: вид мастера.");return;}
   if(action==="draw") {
     need(game.user.isGM,"Только мастер рисует регионы.");
@@ -283,6 +306,7 @@ export function canvasReady() {
 }
 export function canvasTearDown() {
   document.getElementById(`${ID}-arrival`)?.remove();
+  clearTimeout(focusTimer);focusedExit=null;
   if(stage)stage.off("pointerdowncapture",pointer);stage=null;
   overlay?.parent?.removeChild(overlay);overlay?.destroy({children:true});overlay=null;pick=null;
 }

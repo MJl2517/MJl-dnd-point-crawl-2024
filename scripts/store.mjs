@@ -1,4 +1,4 @@
-import {ID, TERRAIN, PACE, ACTIONS, STATUS, clone, need, number, text, esc, allowedPaces, journeySeconds, movementProfile, travelLeg, TRAVEL_LIMIT, secondsLabel, durationSeconds, dayOf, eventTable, validateRequest} from "./rules.mjs";
+import {ID, TERRAIN, PACE, ACTIONS, STATUS, clone, need, number, text, esc, allowedPaces, journeySeconds, movementProfile, travelLeg, TRAVEL_LIMIT, secondsLabel, durationSeconds, dayOf, eventTable, validateRequest, unknownExitLabels} from "./rules.mjs";
 import {privateEntries,initializePrivate,createPrivate} from "./private.mjs";
 import {isBoundary,fitRegion} from "./geometry.mjs";
 import {syncJournals,notebook} from "./journals.mjs";
@@ -104,7 +104,8 @@ async function moveParty(scene,point,flags={},operation={}) {
 export function publicRequest(r,scene,data) {
   if(!r) return null;
   const dest=data.regions[r.to??r.regionId],location=r.locationId?dest?.locations.find(l=>l.id===r.locationId):null;
-  const destination=["local","teleport"].includes(r.kind)?(r.locationId?(dest?.explored&&location?.revealed?location.name:"Скрытая локация"):`Центр: ${dest?.explored?dest.name:"Неизвестный регион"}`):r.to?(dest?.explored?dest.name:"Неизвестный регион"):null;
+  const unknown=r.exitLabel?`Неизвестный регион ${r.exitLabel}`:"Неизвестный регион";
+  const destination=["local","teleport"].includes(r.kind)?(r.locationId?(dest?.explored&&location?.revealed?location.name:"Скрытая локация"):`Центр: ${dest?.explored?dest.name:"Неизвестный регион"}`):r.to?(dest?.explored?dest.name:unknown):null;
   return {id:r.id,sceneId:scene.id,kind:r.kind,status:r.status,offline:!!r.offlineParticipants,createdBy:r.createdBy,assignedUsers:clone(r.assignedUsers??{}),actors:r.actors.map(id=>({id,name:participantName(r,id)})),
     regionId:r.regionId,from:r.from,to:r.to,locationId:r.locationId,pace:r.pace,paces:r.paces,miles:r.miles,effectivePace:r.effectivePace,road:!!r.road,source:r.source,seconds:r.seconds,baseSeconds:r.baseSeconds,risk:r.risk,dc:r.dc,penalty:r.penalty,
     origin:data.regions[r.regionId]?.explored?data.regions[r.regionId].name:"Неизвестный регион",
@@ -166,6 +167,7 @@ async function createRequest(scene,data,kind,user,args,parent=null) {
     need(edge,"Между регионами нет маршрута."); need(dest.center,"У региона назначения нет центра.");
     const paces=allowedPaces(dest,!!edge.road,r.profile),pace=paces.includes(r.pace)?r.pace:paces.at(-1);
     Object.assign(r,{from:here.id,to:dest.id,routeId:edge.id,baseSeconds:edge.seconds,miles:edge.miles,paces,pace,road:!!edge.road,effectivePace:pace,risk:edge.road?false:edge.risk,dc:dest.navigationDC});
+    r.exitLabel=unknownExitLabels(state(scene)).get(dest.id)??null;
     r.seconds=journeySeconds(edge.seconds,pace,dest,r.road,r.profile,r.miles);
   } else if(kind==="short"||kind==="long") {
     r.seconds=CONFIG.DND5E.restTypes[kind].duration[game.settings.get("dnd5e","restVariant")]*60;

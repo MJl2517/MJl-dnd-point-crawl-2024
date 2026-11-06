@@ -1,4 +1,4 @@
-import {ID, PACE, TERRAIN, ACTIONS, STATUS, TRAVEL_LIMIT, movementProfile, allowedPaces, journeySeconds, durationSeconds, esc, eventTable, secondsLabel, need} from "./rules.mjs";
+import {ID, PACE, TERRAIN, ACTIONS, STATUS, TRAVEL_LIMIT, movementProfile, allowedPaces, journeySeconds, durationSeconds, esc, eventTable, secondsLabel, need, unknownExitLabels} from "./rules.mjs";
 import {state, privateData, notesFor, regionDraft, partyToken, partyProfile, participants, participantName, needsParticipant, request, perform} from "./store.mjs";
 import {isBoundary} from "./geometry.mjs";
 import {notebook,showNotebook} from "./journals.mjs";
@@ -58,7 +58,9 @@ export class PointcrawlApp extends ApplicationV2 {
     if(tab)app.tab=tab;
     if(requestId===null)app.requestId="";
     if(regionId) {app.regionId=regionId;app.tab="regions";}
-    app.dirty=false; app.render({force:true}); return app;
+    app.dirty=false; app.render({force:true});
+    if(app.minimized)app.maximize();
+    return app;
   }
   async _renderHTML() {
     const scene=this.scene;
@@ -89,7 +91,11 @@ export class PointcrawlApp extends ApplicationV2 {
     const root=this.element.querySelector(".mjl-shell"); if(!root)return;
     root.addEventListener("click",event=>{
       const b=event.target.closest("[data-pc-action]");
-      if(b) {event.preventDefault();this.run(()=>this.action(b.dataset.pcAction,b),b.dataset.pcAction!=="previewImport");}
+      if(b) {
+        event.preventDefault();
+        const action=b.dataset.pcAction;
+        this.run(()=>this.action(action,b),!["previewImport","focusExit"].includes(action));
+      }
     });
     root.addEventListener("submit",event=>{event.preventDefault(); this.run(()=>this.submit(event.target));});
     root.addEventListener("change",event=>{if(event.target.name==="pace"&&!event.target.closest("[data-form=approve]"))this.pace=event.target.value;});
@@ -144,9 +150,13 @@ export class PointcrawlApp extends ApplicationV2 {
     const s=state(scene),pcs=participants(scene),here=s.regions.find(r=>r.id===s.currentRegionId);
     const actors=pcs.filter(a=>game.user.isGM||a.isOwner),disabled=!actors.length||s.active?"disabled":"";
     const locations=game.user.isGM?(privateData(scene).regions[here?.id]?.locations??here?.locations??[]):here?.locations??[];
+    const exitLabels=unknownExitLabels(s);
     const routeRows=s.routes.filter(r=>r.from===s.currentRegionId||r.to===s.currentRegionId).map(r=>{
       const to=r.from===s.currentRegionId?r.to:r.from,dest=s.regions.find(x=>x.id===to);
-      return `<div class="mjl-row"><div><strong>${esc(dest?.explored?dest.name:"Неизвестный регион")}</strong><small>${secondsLabel(r.normalSeconds??r.seconds)} · ${s.journey?.profile?.mode==="vehicle"?"транспорт":`${PACE[r.normalPace??"normal"].name.toLowerCase()} темп`}${r.road?", дорога":""}</small></div><div class="mjl-row-actions">${game.user.isGM||dest?.explored?this.noteButton(to):""}${button("travel","В путь",`data-to="${to}" ${disabled} class="mjl-primary"`)}</div></div>`;
+      const exitLabel=exitLabels.get(to);
+      const name=dest?.explored?dest.name:"Неизвестный регион";
+      const destination=exitLabel?`${name} ${exitLabel}`:name;
+      return `<div class="mjl-row"><div><strong>${esc(name)}${exitLabel?` <span class="mjl-exit-label">${exitLabel}</span>`:""}</strong><small>${secondsLabel(r.normalSeconds??r.seconds)} · ${s.journey?.profile?.mode==="vehicle"?"транспорт":`${PACE[r.normalPace??"normal"].name.toLowerCase()} темп`}${r.road?", дорога":""}</small></div><div class="mjl-row-actions">${exitLabel?button("focusExit","На карте",`data-to="${to}" aria-label="Показать ${esc(destination)} на карте"`):""}${game.user.isGM||dest?.explored?this.noteButton(to):""}${button("travel","В путь",`data-to="${to}" aria-label="В путь · ${esc(destination)}" ${disabled} class="mjl-primary"`)}</div></div>`;
     }).join("");
     const actorCheck=actors.map(a=>`<label class="mjl-check"><input type="checkbox" name="actor" value="${a.id}" checked>${esc(a.name)}</label>`).join("");
     const canChooseGuide=actors.length||!s.offline&&partyToken(scene)?.isOwner,guideId=pcs.some(a=>a.id===s.guideId)?s.guideId:"";
@@ -292,6 +302,12 @@ export class PointcrawlApp extends ApplicationV2 {
     if(action==="centre") {TravelCentre.open();return;}
     if(action==="currentRequest") {this.requestId="";return;}
     if(action==="party")return request("party",{tokenId:this.element.querySelector("[name=party]").value});
+    if(action==="focusExit") {
+      need(unknownExitLabels(state(scene)).has(b.dataset.to),"Этот выход уже изменился. Обновите центр путешествий.");
+      await this.minimize();
+      Hooks.callAll(`${ID}.tool`,{action,regionId:b.dataset.to,sceneId:scene.id});
+      return;
+    }
     if(action==="teleport") {
       const actors=this.chosenActors();need(actors.length,"Выберите персонажа, использующего телепортацию.");
       const value=await prompt("Телепортация партии",`<label>Место прибытия<select name="destination" required><option value="">Выберите точку</option>${teleportOptions(scene)}</select></label>${field("Заклинание или предмет","source","","text",'maxlength="200" placeholder="Например, шлем телепортации"')}${teleportHint}`,f=>fdata(f),"Отправить заявку");

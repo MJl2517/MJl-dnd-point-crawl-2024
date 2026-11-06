@@ -186,6 +186,43 @@ try {
     assert.equal(await b.eval('canvas.scene.getFlag("mjl-pointcrawl","state").active',client),null);
   }
   pass('Manual movement inside a region, onto a location or across a boundary is blocked for GM/player and creates no request');
+  const third=await ev(gm,async one=>{
+    const m=await import('/modules/mjl-pointcrawl/scripts/store.mjs');
+    const [region]=await canvas.scene.createEmbeddedDocuments('Region',[{name:'third',shapes:[{type:'rectangle',x:400,y:1220,width:600,height:260}]}]);
+    await m.request('region',{regionId:region.id,values:{name:'SECRET_EXIT_THREE',center:{x:650,y:1350},showName:false}});
+    await m.request('route',{from:region.id,to:one,seconds:5400,risk:false});
+    return region.id;
+  },f.one);
+  await until(player,`canvas.scene.getFlag('mjl-pointcrawl','state').routes.some(r=>r.from==='${third}')`);
+  await ev(player,async()=>(await import('/modules/mjl-pointcrawl/scripts/app.mjs')).TravelCentre.open({tab:'travel'}).id);
+  await until(player,`document.querySelectorAll('#mjl-pointcrawl-centre .mjl-exit-label').length===2`);
+  const exitRows=await ev(player,()=>[...document.querySelectorAll('#mjl-pointcrawl-centre [data-pc-action=focusExit]')]
+    .map(b=>[b.dataset.to,b.closest('.mjl-row').querySelector('.mjl-exit-label').textContent]));
+  assert.deepEqual(exitRows,[[f.two,'?1'],[third,'?2']]);
+  for(const [id,code] of exitRows)await until(player,`canvas.stage.getChildByName('mjl-pointcrawl')
+    .getChildByName('region-point-${id}')?.getChildByName('region-exit-${id}')?.text==='${code}'`);
+  await b.eval(`document.querySelector('#mjl-pointcrawl-centre [data-pc-action=focusExit][data-to="${third}"]').click()`,player);
+  await until(player,`!!canvas.stage.getChildByName('mjl-pointcrawl').getChildByName('region-point-${third}').getChildByName('focused-exit-${third}')`);
+  assert.equal(await marker(player,`focused-exit-${f.two}`),null);
+  assert.equal(await marker(gm,`focused-exit-${third}`),null);
+  assert.equal(await b.eval('canvas.scene.getFlag("mjl-pointcrawl","state").active',player),null);
+  assert.equal(await ev(player,async()=>(await import('/modules/mjl-pointcrawl/scripts/app.mjs')).TravelCentre.instance.minimized),true);
+  await b.screenshot('mjl-pointcrawl/dev/unknown-exit-player.png',player);
+  await ev(player,async()=>(await import('/modules/mjl-pointcrawl/scripts/app.mjs')).TravelCentre.open({tab:'travel'}).id);
+  await until(player,`(async()=>!(await import('/modules/mjl-pointcrawl/scripts/app.mjs')).TravelCentre.instance.minimized)()`);
+  await b.eval(`document.querySelector('#mjl-pointcrawl-centre [data-pc-action=travel][data-to="${third}"]').click()`,player);
+  const exitRequest=await until(player,'canvas.scene.getFlag("mjl-pointcrawl","state").active');
+  assert.equal(exitRequest.to,third);assert.equal(exitRequest.destination,'Неизвестный регион ?2');
+  await until(player,`document.querySelector('#mjl-pointcrawl-request-${exitRequest.id}')?.textContent.includes('Неизвестный регион ?2')`);
+  assert.equal(await b.eval('JSON.stringify(canvas.scene.getFlag("mjl-pointcrawl","state")).includes("SECRET_EXIT_THREE")',player),false);
+  await send(gm,'reject',{requestId:exitRequest.id});
+  await until(player,'!canvas.scene.getFlag("mjl-pointcrawl","state").active');
+  await ev(player,async()=>{
+    const {TravelCentre,RequestWindow}=await import('/modules/mjl-pointcrawl/scripts/app.mjs');
+    for(const a of [TravelCentre.instance,...RequestWindow.windows.values()])if(a?.rendered)await a.close();
+    canvas.pan({x:1100,y:800,scale:.7});
+  });
+  pass('Two unknown exits have distinct matching labels on the map and in the hub; local focus and the request target the selected exit');
   id=await send(player,'create',{kind:'travel',to:f.two,actors:[f.hero]});
   await until(gm,`!!document.querySelector('#mjl-pointcrawl-request-${id} [data-form=approve]')`);
   await send(gm,'approve',{requestId:id,risk:false});

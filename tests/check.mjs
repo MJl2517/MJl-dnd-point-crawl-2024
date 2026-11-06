@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
-import {ID,TERRAIN,allowedPaces,travelSeconds,travelLeg,journeySeconds,movementProfile,durationSeconds,eventTable,polygon,inside,overlaps,validateRegionGeometry,dayOf,validateRequest} from "../scripts/rules.mjs";
+import {ID,TERRAIN,allowedPaces,travelSeconds,travelLeg,journeySeconds,movementProfile,durationSeconds,eventTable,polygon,inside,overlaps,validateRegionGeometry,dayOf,validateRequest,unknownExitLabels} from "../scripts/rules.mjs";
 let checks=0;
 const eq=(a,b)=>{assert.deepEqual(a,b);checks++;};
 const bad=(fn,pattern)=>{assert.throws(fn,pattern);checks++;};
 const reject=async(fn,pattern)=>{await assert.rejects(fn,pattern);checks++;};
 eq(Object.keys(TERRAIN).length,11);
+const exits={currentRegionId:"here",regions:["here","north","south","remote"].map(id=>({id,center:{x:0,y:0},explored:id==="here"})),
+  routes:[{from:"here",to:"north"},{from:"south",to:"here"},{from:"north",to:"remote"}]};
+eq([...unknownExitLabels(exits)],[["north","?1"],["south","?2"]]);
+exits.regions.find(r=>r.id==="north").explored=true;
+eq([...unknownExitLabels(exits)],[["south","?2"]]);
 eq(durationSeconds(1,25),5100);eq(durationSeconds("2","0"),7200);eq(durationSeconds(0,1),60);
 for(const [h,m] of [[0,0],[0,60],[-1,15],[1.5,0],[0,1.5],[8760,1],["",20]])bad(()=>durationSeconds(h,m),/число|значение/);
 for(const [pace,seconds] of [["slow",5400],["normal",3600],["fast",2700]])eq(travelSeconds(3600,pace,{...TERRAIN.grassland,terrain:"grassland"}),seconds);
@@ -76,6 +81,7 @@ await reject(()=>send("create",{kind:"travel",to:"two",actors:["hero"]},"outside
 await reject(()=>send("route",{from:"one",to:"two",seconds:1},"player"),/только мастеру/);
 await reject(()=>send("create",{kind:"unknown",actors:["hero"]},"player"),/Неизвестное действие/);
 const id=await send("create",{kind:"travel",to:"two",actors:["hero"],pace:"normal"},"player");
+eq(flags.state.active.destination,"Неизвестный регион ?1");
 eq(token.x,0);eq(data.regions.two.explored,false);eq(clock,0);
 await reject(()=>send("create",{kind:"search",actors:["hero"]},"player"),/текущую заявку/);
 await reject(()=>send("approve",{requestId:id},"player"),/только мастеру/);
