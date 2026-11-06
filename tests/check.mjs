@@ -284,4 +284,15 @@ arrival.id="no-rest-title";arrival.kind="long";await arrivalBanner(arrivalMessag
 let endMovement;token.object={movementAnimationPromise:new Promise(resolve=>{endMovement=resolve;})};
 arrival.id="after-animation";arrival.kind="local";const titleAfterMove=arrivalBanner(arrivalMessage,{flags:{[ID]:{request:arrival}}});eq(banners.length,2);
 endMovement();await titleAfterMove;eq(banners.length,3);
+regions.get("two").polygonTree={testPoint:p=>inside(p,b)};
+const colorLocation=data.regions.two.locations.find(l=>l.id==="secret");
+const colorArgs={regionId:"two",locationId:colorLocation.id};
+await reject(()=>send("location",{...colorArgs,values:{...colorLocation,color:"red"}}),/#RRGGBB/);
+await send("location",{...colorArgs,values:{...colorLocation,color:"#Ef5466",revealed:false}});
+eq(data.regions.two.locations.find(l=>l.id===colorLocation.id).color,"#ef5466");
+eq(JSON.stringify(flags.state).includes("#ef5466"),false);
+await send("location",{...colorArgs,values:{...colorLocation,revealed:true}});
+eq(flags.state.regions.find(r=>r.id==="two").locations.find(l=>l.id===colorLocation.id).color,"#ef5466");
+await send("location",{...colorArgs,values:{...colorLocation,color:"",revealed:true}});
+eq(flags.state.regions.find(r=>r.id==="two").locations.find(l=>l.id===colorLocation.id).color,null);
 console.log(`PASS: ${checks} checks — geometry, roads/speed, JSON, permissions, journals, group search, travel-day checkpoints, forced march, rest/resume and recovery.`);

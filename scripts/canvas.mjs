@@ -4,6 +4,7 @@ import {PointcrawlApp,TravelCentre,RequestWindow} from "./app.mjs";
 import {fitRegion,shapeTree,subtractPaths,drawTree} from "./geometry.mjs";
 
 let overlay,stage,pick=null;
+let paletteWork=Promise.resolve();
 export let preview=false;
 const notify=error=>{ui.notifications.error(`Pointcrawl: ${error.message}`);console.error(ID,error);};
 const run=fn=>Promise.resolve().then(fn).catch(notify);
@@ -87,7 +88,8 @@ export function redraw() {
     if(r.explored||secrets) for(const l of r.locations??[]) {
       const mark=new PIXI.Container();mark.name=`location-point-${l.id}`;mark.position.set(l.x,l.y);
       // Public locations have already been filtered by publish and omit the private revealed field.
-      mark.addChild(new PIXI.Graphics().lineStyle(2,0xebd9ab).beginFill(!secrets||l.revealed?0x7c986c:0x724d50).drawCircle(0,0,7).endFill());
+      const color=l.color?Number.parseInt(l.color.slice(1),16):(!secrets||l.revealed?0x7c986c:0x724d50);
+      mark.addChild(new PIXI.Graphics().lineStyle(2,0xebd9ab).beginFill(color).drawCircle(0,0,7).endFill());
       if(secrets) {
         const eye=new PIXI.Graphics().lineStyle(2,0xebd9ab).moveTo(-9,0).quadraticCurveTo(0,-10,9,0).quadraticCurveTo(0,10,-9,0).drawCircle(0,0,2);
         if(!l.revealed)eye.moveTo(-9,8).lineTo(9,-8);
@@ -171,6 +173,26 @@ export async function useTool({action,regionId,onPick,onCancel}) {
   }
 }
 
+function toggleRegionPalette(closeOnly=false) {
+  paletteWork=paletteWork.then(async()=>{
+    const current=ui.placeablesPalette;
+    if(closeOnly?current?.id!=="region-palette":ui.controls.control?.name!==ID)return;
+    if(current)await current.close({animate:false});
+    if(closeOnly||current?.id==="region-palette"||ui.controls.control?.name!==ID)return;
+    const Palette=canvas.regions.constructor.paletteClass;
+    const palette=new Palette({
+      initialData:ui.controls.tool?.createData??{},
+      position:{top:180,left:100},
+      actions:{closePalette:()=>toggleRegionPalette(true)}
+    });
+    // Reserve the window while Foundry's controls and palette render asynchronously.
+    ui.placeablesPalette=palette;
+    try {await palette.render({force:true});}
+    catch(error) {if(ui.placeablesPalette===palette)ui.placeablesPalette=null;throw error;}
+  }).catch(notify);
+  return paletteWork;
+}
+
 export function controls(controls) {
   const original=controls.regions;if(!original)return;
   const gm=game.user.isGM;
@@ -194,7 +216,6 @@ export function controls(controls) {
       if(!gm)return;
       canvas.regions.setAllRenderFlags({refreshState:true});
       if(active&&!tool.control)canvas.regions.releaseAll();
-      // Our palette stays available; the native handler repeatedly rebuilds controls to hide it while drawing.
     },activeTool:gm?"inspect":"travel",tools:{
       hub:tool("hub","Центр путешествий","fa-solid fa-campground",1,{button:true,onChange:()=>TravelCentre.open()}),
       travel:tool("travel","Перейти к центру или локации","fa-solid fa-person-hiking",2,{interaction:true,control:true}),
@@ -204,17 +225,8 @@ export function controls(controls) {
       rectangle:{...original.tools.rectangle,visible:gm,control:true,order:6},
       select:{...original.tools.select,visible:gm,order:7,title:"Редактировать границы региона"},
       center:tool("center","Поставить центр выбранного региона","fa-solid fa-crosshairs",8,{interaction:true,control:true,visible:gm,onChange:(_e,enabled)=>{if(enabled&&!pick)run(()=>useTool({action:"center",regionId:canvas.regions.controlled[0]?.id}));}}),
-      togglePalette:{...original.tools.togglePalette,visible:gm,order:9,toggle:false,button:true,active:false,onChange:(_event,active)=>{
-        if(!gm||!active)return;
-        run(async()=>{
-          if(ui.placeablesPalette?.rendered){await ui.placeablesPalette.close();return;}
-          const Palette=canvas.regions.constructor.paletteClass;
-          const palette=new Palette({position:{top:180,left:100}});
-          // Reserve the native palette before rendering so SceneControls cannot start a second instance.
-          ui.placeablesPalette=palette;
-          await palette.render({force:true});
-        });
-      }},
+      togglePalette:{...original.tools.togglePalette,visible:gm&&original.tools.togglePalette.visible!==false,order:9,toggle:false,button:true,active:false,
+        onChange:(_event,active)=>gm&&toggleRegionPalette(!active)},
       preview:tool("preview","Предпросмотр вида игроков","fa-solid fa-eye",10,{button:true,visible:gm,onChange:()=>run(()=>useTool({action:"preview"}))})
     }};
 }

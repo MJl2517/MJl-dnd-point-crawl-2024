@@ -101,7 +101,7 @@ export async function publish(scene,data,extra={}) {
   const old=state(scene);
   const currentId=Object.hasOwn(extra,"currentRegionId")?extra.currentRegionId:old.currentRegionId;
   const regions=Object.values(data.regions).filter(Boolean).map(r=>({id:r.id,center:r.center,showName:r.showName!==false,explored:r.explored,
-    ...(r.explored?{name:r.name,terrain:r.terrain,description:r.description,locations:r.locations.filter(l=>l.revealed).map(l=>({id:l.id,name:l.name,showName:l.showName!==false,description:l.description,x:l.x,y:l.y}))}:{})}));
+    ...(r.explored?{name:r.name,terrain:r.terrain,description:r.description,locations:r.locations.filter(l=>l.revealed).map(l=>({id:l.id,name:l.name,showName:l.showName!==false,description:l.description,x:l.x,y:l.y,color:l.color??null}))}:{})}));
   const routes=data.routes.filter(r=>r.from===currentId||r.to===currentId||(data.regions[r.from]?.explored&&data.regions[r.to]?.explored)).map(r=>{
     const to=r.from===currentId?r.to:r.from;
     const profile=partyProfile(scene,data),paces=allowedPaces(data.regions[to],!!r.road,profile),pace=paces.includes("normal")?"normal":paces.at(-1);
@@ -385,10 +385,13 @@ export async function processRequest(args,senderId) {
     const currentRequest=active(data),pending=currentRequest?.resumeId?data.requests[currentRequest.resumeId]:currentRequest;need(!pending||!["local","teleport"].includes(pending.kind)||(pending.kind==="teleport"?pending.to:pending.regionId)!==r.id,"Завершите заявку перемещения перед изменением локаций этого региона.");
     if(args.remove) r.locations=r.locations.filter(l=>l.id!==args.locationId);
     else {
-      const l={id:args.locationId??uid(),name:text(value.name,"Название",200).trim(),description:text(value.description??"","Описание"),notes:text(value.notes??"","Секреты"),
+      const i=r.locations.findIndex(x=>x.id===args.locationId);
+      const color=value.color===undefined?r.locations[i]?.color??null:value.color===""?null:value.color;
+      need(color===null||typeof color==="string"&&/^#[0-9a-f]{6}$/i.test(color),"Укажите цвет в формате #RRGGBB или оставьте поле пустым.");
+      const l={id:args.locationId??uid(),name:text(value.name,"Название",200).trim(),description:text(value.description??"","Описание"),notes:text(value.notes??"","Секреты"),color:color?.toLowerCase()??null,
         x:number(value.x,"X",-1e7),y:number(value.y,"Y",-1e7),dc:value.dc===""||value.dc==null?null:number(value.dc,"Сл. поиска",0,100,true),revealed:!!value.revealed,showName:value.showName!==false};
       need(l.name,"Укажите название локации."); need(scene.regions.get(r.id).polygonTree.testPoint(l),"Локация должна находиться внутри региона.");
-      const i=r.locations.findIndex(x=>x.id===l.id); if(i<0) r.locations.push(l); else r.locations[i]=l;
+      if(i<0) r.locations.push(l); else r.locations[i]=l;
     }
     await persist(scene,data); return;
   }

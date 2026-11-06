@@ -324,11 +324,12 @@ export class PointcrawlApp extends ApplicationV2 {
   async locationDialog(id,point,draft) {
     const scene=this.scene,r=privateData(scene).regions[this.regionId];need(r,"Выберите регион.");
     const old={...(r.locations.find(l=>l.id===id)??{name:"",description:"",notes:"",x:r.center?.x??"",y:r.center?.y??"",dc:"",revealed:false}),...draft,...point};
-    const read=f=>({...fdata(f),revealed:f.elements.revealed.checked,showName:f.elements.showName.checked,remove:!!f.elements.remove?.checked});
+    const read=f=>({...fdata(f),color:f.querySelector("color-picker").value,revealed:f.elements.revealed.checked,showName:f.elements.showName.checked,remove:!!f.elements.remove?.checked});
     const value=await DialogV2.prompt({classes:["mjl-dialog","mjl-location-editor"],window:{title:"Локация региона"},position:{width:600},rejectClose:false,
       content:`<div class="mjl-location-layout">${field("Название локации","name",old.name,"text","required")}
         <section class="mjl-location-point"><div><strong>Положение на карте</strong><p>${old.x===""?"Точка не выбрана":`Точка: ${Math.round(old.x)}, ${Math.round(old.y)}`}</p></div><button type="button" data-location-pick><i class="fa-solid fa-location-dot" aria-hidden="true"></i> Выбрать на карте</button></section>
-        ${field("Сложность поиска","dc",old.dc??"","number",'min="0" max="100" placeholder="Оставьте пустым, для сложности по умолчанию для региона"')}
+        <div class="mjl-location-row">${field("Сложность поиска","dc",old.dc??"","number",'min="0" max="100" placeholder="Оставьте пустым, для сложности по умолчанию для региона"')}
+        <label>Цвет маркера на карте<color-picker name="color" value="${esc(old.color)}" placeholder="${old.revealed?"#7c986c":"#724d50"}"></color-picker></label></div>
         ${area("Описание для игроков","description",old.description)}${area("Секретные заметки мастера","notes",old.notes)}
         <div class="mjl-location-options"><label class="mjl-location-check"><input type="checkbox" name="revealed" ${checked(old.revealed)}><span>Открыта игрокам</span></label><label class="mjl-location-check"><input type="checkbox" name="showName" ${checked(old.showName!==false)}><span>Название на карте</span></label></div>
         <details class="mjl-location-coordinates"><summary>Точные координаты · дополнительно</summary><div class="mjl-location-row">${field("Координата X","x",old.x,"number",'step="any"')}${field("Координата Y","y",old.y,"number",'step="any"')}</div></details>

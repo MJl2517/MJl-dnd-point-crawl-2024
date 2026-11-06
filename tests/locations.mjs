@@ -63,12 +63,21 @@ try {
     await m.request('region',{regionId:one.id,values:{name:'Зелёная долина',center:{x:600,y:600},explored:true}},scene);
     const secretForest=`SECRET_FOREST_LOC_${scene.id}`;
     await m.request('region',{regionId:two.id,values:{name:secretForest,center:{x:1600,y:600}}},scene);
-    await m.request('location',{regionId:one.id,values:{name:'SECRET_CAVE_LOC',notes:'SECRET_NOTES_LOC',description:'',x:700,y:1000,revealed:false}},scene);
+    await m.request('location',{regionId:one.id,values:{name:'SECRET_CAVE_LOC',notes:'SECRET_NOTES_LOC',description:'',x:700,y:1000,revealed:false,color:'#b74fe7'}},scene);
     await m.request('route',{from:one.id,to:two.id,seconds:5400,risk:false},scene);
     const [token]=await scene.createEmbeddedDocuments('Token',[(await group.getTokenDocument({x:550,y:550,width:1,height:1})).toObject()]);await m.request('party',{tokenId:token.id},scene);
     await scene.activate();game.togglePause(false,{broadcast:true});return {scene:scene.id,one:one.id,two:two.id,token:token.id,hero:hero.id,secretForest};
   });
   await until(gm,`canvas.ready&&canvas.scene.id==='${f.scene}'`);
+  await b.eval(`ui.controls.activate({control:'mjl-pointcrawl',tool:'polygon'})`,gm);
+  await until(gm,`ui.controls.control?.name==='mjl-pointcrawl'&&canvas.regions.active&&ui.controls.tool?.name==='polygon'&&!!document.querySelector('#scene-controls [data-tool=togglePalette]')`);
+  await b.eval(`document.querySelector('#scene-controls [data-tool=togglePalette]').click()`,gm);
+  await until(gm,'ui.placeablesPalette?.rendered&&ui.placeablesPalette.id==="region-palette"');
+  await ev(gm,()=>{const input=ui.placeablesPalette.element.querySelector('color-picker input[type=color]');input.value='#2978d4';input.dispatchEvent(new Event('change',{bubbles:true}));});
+  await until(gm,`String(game.settings.get('core','regionPalette').color)==='#2978d4'`);
+  await b.eval(`document.querySelector('#region-palette [data-action=closePalette]').click()`,gm);
+  await until(gm,'!ui.placeablesPalette?.rendered');
+  pass('GM opens and closes the native region palette from the Pointcrawl toolbar');
   await ev(gm,async f=>{await ui.controls.activate({control:'mjl-pointcrawl',tool:'inspect'});canvas.pan({x:1100,y:800,scale:.7});(await import('/modules/mjl-pointcrawl/scripts/app.mjs')).PointcrawlApp.open({regionId:f.one});},f);
   await until(gm,'!!document.querySelector("#mjl-pointcrawl-manager [data-form=region]")');
   const themes=await ev(gm,()=>{
@@ -85,7 +94,7 @@ try {
   pass('Native select options use opaque matching backgrounds and readable text in dark and light application themes');
   await b.eval('document.querySelector("#mjl-pointcrawl-manager [data-pc-action=location]:not([data-id])").click()',gm);
   await until(gm,'!!document.querySelector("[data-location-pick]")');
-  await ev(gm,()=>{const form=document.querySelector('[data-location-pick]').form;form.elements.name.value='Родник';form.elements.description.value='Вода у старого дуба';form.elements.notes.value='SECRET_SPRING_LOC';form.elements.revealed.checked=true;form.querySelector('[data-location-pick]').click();});
+  await ev(gm,()=>{const form=document.querySelector('[data-location-pick]').form;form.elements.name.value='Родник';form.elements.description.value='Вода у старого дуба';form.elements.notes.value='SECRET_SPRING_LOC';form.elements.revealed.checked=true;const color=form.querySelector('color-picker input[type=color]');color.value='#ef5466';color.dispatchEvent(new Event('change',{bubbles:true}));form.querySelector('[data-location-pick]').click();});
   await until(gm,'!document.querySelector("[data-location-pick]")&&!document.querySelector("#mjl-pointcrawl-manager")');
   await click(gm,1500,850);
   assert.equal(await b.eval('!!document.querySelector("[data-location-pick]")',gm),false);
@@ -93,6 +102,7 @@ try {
   await b.call('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27},gm);
   await until(gm,'!!document.querySelector("[data-location-pick]")');
   assert.equal(await b.eval('document.querySelector("[data-location-pick]").form.elements.description.value',gm),'Вода у старого дуба');
+  assert.equal(await b.eval('document.querySelector(".mjl-location-editor color-picker").value',gm),'#ef5466');
   pass('Invalid map click is refused; Escape restores the unsaved location form');
   await b.eval('document.querySelector("[data-location-pick]").click()',gm);
   await until(gm,'!document.querySelector("[data-location-pick]")');await click(gm,1000,850);
@@ -110,7 +120,7 @@ try {
   await b.screenshot('mjl-pointcrawl/dev/location-editor.png',gm);
   await b.eval('document.querySelector("[data-location-pick]").form.querySelector("[data-action=ok]").click()',gm);
   await until(gm,`(async()=>!!(await import('/modules/mjl-pointcrawl/scripts/store.mjs')).privateData(canvas.scene).regions['${f.one}'].locations.find(l=>l.name==='Родник'))()`);
-  const spring=(await privateRegion(gm,f.one)).locations.find(l=>l.name==='Родник');assert.equal(spring.notes,'SECRET_SPRING_LOC');assert.equal(Math.round(spring.y),850);
+  const spring=(await privateRegion(gm,f.one)).locations.find(l=>l.name==='Родник');assert.equal(spring.notes,'SECRET_SPRING_LOC');assert.equal(Math.round(spring.y),850);assert.equal(spring.color,'#ef5466');
   pass('Location is placed with a real map click and preserves its name, description and secret notes');
   const context=(await b.call('Target.createBrowserContext')).browserContextId;contexts.push(context);player=await join('Pointcrawl Player',context);
   await ev(player,async()=>{await ui.controls.activate({control:'mjl-pointcrawl'});canvas.pan({x:1100,y:800,scale:.7});});
@@ -118,7 +128,9 @@ try {
   assert.equal(await b.eval('!!document.querySelector("[data-tool=togglePalette], [data-tool=inspect], [data-tool=select]")',player),false);
   assert.equal(await b.eval('ui.controls.tool.name',player),'travel');
   const publicData=await b.eval('JSON.stringify({scene:canvas.scene.toObject(),messages:game.messages.contents,journals:game.journal.contents})',player);
-  for(const secret of [f.secretForest,'SECRET_CAVE_LOC','SECRET_NOTES_LOC','SECRET_SPRING_LOC'])assert(!publicData.includes(secret),secret);
+  for(const secret of [f.secretForest,'SECRET_CAVE_LOC','SECRET_NOTES_LOC','SECRET_SPRING_LOC','#b74fe7'])assert(!publicData.includes(secret),secret);
+  for(const s of [gm,player])await until(s,`canvas.stage.getChildByName('mjl-pointcrawl')?.getChildByName('location-point-${spring.id}')?.children[0].geometry.graphicsData[0].fillStyle.color===0xef5466`);
+  pass('A chosen location color survives point selection and renders on both clients while hidden colors stay private');
   pass('Player has travel and hub controls; palette and region selectors are hidden and secrets remain private');
   assert.equal((await marker(player,`location-name-${spring.id}`))?.text,'Родник');
   const routeLabel=await ev(player,()=>canvas.stage.getChildByName('mjl-pointcrawl').children.filter(c=>c.name?.startsWith('route-time-')).map(c=>c.getChildByName('duration').text));assert.deepEqual(routeLabel,['1 ч 30 мин']);
