@@ -295,4 +295,74 @@ await send("location",{...colorArgs,values:{...colorLocation,revealed:true}});
 eq(flags.state.regions.find(r=>r.id==="two").locations.find(l=>l.id===colorLocation.id).color,"#ef5466");
 await send("location",{...colorArgs,values:{...colorLocation,color:"",revealed:true}});
 eq(flags.state.regions.find(r=>r.id==="two").locations.find(l=>l.id===colorLocation.id).color,null);
-console.log(`PASS: ${checks} checks — geometry, roads/speed, JSON, permissions, journals, group search, travel-day checkpoints, forced march, rest/resume and recovery.`);
+
+// The same authority and commit path works with an empty native group and physical dice.
+group.system.playerCharacters=[];
+globalThis.Roll=class {constructor(){throw Error("Offline mode must not roll dice");}};
+await reject(()=>send("create",{kind:"navigation"}),/офлайн-режим/);
+await send("offlineSettings",{enabled:true,names:""});
+const groupCheck=await send("create",{kind:"navigation"});
+eq(flags.state.active.actors.map(a=>a.name),["Группа"]);
+await send("reject",{requestId:groupCheck});
+await reject(()=>send("offlineSettings",{enabled:true,names:"Лия\nлия"}),/уникальными/);
+await send("offlineSettings",{enabled:true,names:"Лия\nРен"});
+const [lia,ren]=data.offline.roster.map(p=>p.id);
+await send("offlineSettings",{enabled:true,names:"Рен\nЛия"});
+eq(data.offline.roster.map(p=>p.id),[ren,lia]);
+const record=(requestId,actorId,values={},user="gm")=>send("recordOffline",{requestId,actorId,step:0,...values},user);
+flags.state.currentRegionId="one";
+await send("journeySettings",{hours:0});
+await send("route",{from:"one",to:"two",seconds:3600,risk:true,road:false});
+await reject(()=>send("create",{kind:"travel",to:"two"},"player"),/управляет мастер/);
+const offlineJourney=await send("create",{kind:"travel",to:"two",actors:[lia]});
+await reject(()=>send("offlineSettings",{enabled:false,names:""}),/текущую заявку/);
+await send("approve",{requestId:offlineJourney,dc:15,risk:true});
+await reject(()=>send("reserve",{requestId:offlineJourney,actorId:lia}),/вручную/);
+await reject(()=>record(offlineJourney,lia,{total:9,penaltyDie:3},"player"),/только мастеру/);
+await reject(()=>record(offlineJourney,lia,{total:9}),/d6/);
+await record(offlineJourney,lia,{total:9,penaltyDie:3});
+await reject(()=>record(offlineJourney,lia,{total:12,penaltyDie:2}),/уже выполнена/);
+eq(data.requests[offlineJourney].seconds,4680);
+const beforeOffline=clock;await send("finish",{requestId:offlineJourney});
+eq([clock-beforeOffline,flags.state.currentRegionId],[4680,"two"]);
+
+const forageOffline=await send("create",{kind:"forage",actors:[lia,ren]});
+await send("approve",{requestId:forageOffline});
+await record(forageOffline,lia,{total:30,food:-1,water:4});
+await record(forageOffline,ren,{total:-1});
+eq([data.requests[forageOffline].outcomes[lia].food,data.requests[forageOffline].outcomes[lia].water],[0,4]);
+await send("finish",{requestId:forageOffline});
+await reject(()=>send("create",{kind:"forage",actors:[lia]}),/уже искал/);
+
+await send("journeySettings",{hours:8});
+await send("route",{from:"two",to:"one",seconds:3600,risk:false,road:false});
+const offlineMarch=await send("create",{kind:"travel",to:"one"});
+await send("approve",{requestId:offlineMarch,march:true});
+await send("finish",{requestId:offlineMarch});
+eq([data.requests[offlineMarch].phase,data.requests[offlineMarch].dc],["marchSave",11]);
+await reject(()=>record(offlineMarch,lia,{total:2}),/этап изменились/);
+await record(offlineMarch,lia,{total:2,step:1});await record(offlineMarch,ren,{total:16,step:1});
+eq(data.requests[offlineMarch].outcomes[lia].label.includes("истощения"),true);
+await send("finish",{requestId:offlineMarch,step:1});
+eq([data.requests[offlineMarch].status,flags.state.currentRegionId],["done","one"]);
+const offlineRest=await send("create",{kind:"long"});
+await send("approve",{requestId:offlineRest});
+await record(offlineRest,lia);await record(offlineRest,ren);
+const beforeRest=clock;await send("finish",{requestId:offlineRest});
+eq([clock-beforeRest,flags.state.journey.seconds],[28800,0]);
+
+data.regions.one.locations.push({id:"offline-find",name:"Тайный вход",x:60,y:60,dc:18,revealed:false});
+const offlineSearch=await send("create",{kind:"search",actors:[lia]});
+await send("approve",{requestId:offlineSearch});await record(offlineSearch,lia,{total:19});
+await send("reveal",{requestId:offlineSearch,locationId:"offline-find"});
+eq(flags.state.regions.find(r=>r.id==="one").locations.find(l=>l.id==="offline-find")?.name,"Тайный вход");
+await send("finish",{requestId:offlineSearch});
+
+data.regions.one.tables=["offlineTable"];
+game.tables=new Map([["offlineTable",{id:"offlineTable",name:"Событие",getResultsForRoll:total=>total===3?[{description:"Следы"}]:[],
+  async draw(options){assert.equal(options.results.length,1);return {results:options.results};}}]]);
+await reject(()=>send("event",{regionId:"one",tableId:"offlineTable",total:0}),/нет доступного/);
+const eventId=await send("event",{regionId:"one",tableId:"offlineTable",total:3});
+eq(data.events[eventId].content.includes("Следы"),true);
+await send("offlineSettings",{enabled:false,names:"Лия\nРен"});eq(flags.state.offline,false);
+console.log(`PASS: ${checks} checks — geometry, roads/speed, JSON, permissions, journals, group search, travel-day checkpoints, forced march, rest/resume, recovery and offline results.`);

@@ -1,5 +1,5 @@
 import {ID, need, secondsLabel} from "./rules.mjs";
-import {state,privateData,partyToken,members,regionAt,request} from "./store.mjs";
+import {state,privateData,partyToken,participants,regionAt,request} from "./store.mjs";
 import {PointcrawlApp,TravelCentre,RequestWindow} from "./app.mjs";
 import {fitRegion,shapeTree,subtractPaths,drawTree} from "./geometry.mjs";
 
@@ -33,7 +33,7 @@ function routeBadge(edge,seconds,color,x,y) {
 function clearPickNotice(pending) {for(const n of [pending?.notice,pending?.warning])if(n)ui.notifications.remove(n);}
 function cancelPick() {const pending=pick;pick=null;clearPickNotice(pending);if(pending?.onCancel)run(pending.onCancel);if(pending)redraw();}
 async function visitLocation(locationId=null) {
-  const actors=members(canvas.scene).filter(a=>game.user.isGM||a.isOwner).map(a=>a.id);
+  const actors=participants(canvas.scene).filter(a=>game.user.isGM||a.isOwner).map(a=>a.id);
   need(actors.length,"Нет персонажа партии под вашим управлением.");
   const requestId=await request("create",{kind:"local",locationId,actors});RequestWindow.open({requestId});
 }
@@ -115,7 +115,7 @@ async function selectRegion(id) {
   const s=state(canvas.scene);
   if(id===s.currentRegionId&&mode==="travel")return visitLocation();
   if(id!==s.currentRegionId&&(mode==="travel"||!game.user.isGM)) {
-    const actors=members(canvas.scene).filter(a=>game.user.isGM||a.isOwner).map(a=>a.id);
+    const actors=participants(canvas.scene).filter(a=>game.user.isGM||a.isOwner).map(a=>a.id);
     need(actors.length,"Нет персонажа партии под вашим управлением.");
     const requestId=await request("create",{kind:"travel",to:id,actors,pace:"normal"});RequestWindow.open({requestId});return;
   }

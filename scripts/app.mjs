@@ -1,5 +1,5 @@
 import {ID, PACE, TERRAIN, ACTIONS, STATUS, TRAVEL_LIMIT, movementProfile, allowedPaces, journeySeconds, durationSeconds, esc, eventTable, secondsLabel, need} from "./rules.mjs";
-import {state, privateData, notesFor, regionDraft, partyToken, partyProfile, members, needsParticipant, request, perform} from "./store.mjs";
+import {state, privateData, notesFor, regionDraft, partyToken, partyProfile, participants, participantName, needsParticipant, request, perform} from "./store.mjs";
 import {isBoundary} from "./geometry.mjs";
 import {notebook,showNotebook} from "./journals.mjs";
 
@@ -15,6 +15,22 @@ function timePreview(form,calculate) {
   const update=()=>{try{output.textContent=calculate(form);}catch(e){output.textContent=e.message;}};
   form.addEventListener('input',update);form.addEventListener('change',update);update();
 }
+
+function offlineRoll(r,name) {
+  const navigation=r.phase!=="marchSave"&&["travel","local"].includes(r.kind);
+  const forage=r.kind==="forage";
+  const extra=navigation?field("Штраф навигации · результат d6","penaltyDie","","number",'min="1" max="6" step="1" required'):
+    forage?`<p class="mjl-muted">Введите результаты d6 + модификатор Мудрости для еды и воды.</p><div class="mjl-form-grid">${field("Еда, фунты","food","","number",'min="-100" max="1000" step="1" required')}${field("Вода, галлоны","water","","number",'min="-100" max="1000" step="1" required')}</div>`:"";
+  return prompt("Результат с реального стола",`<p><strong>${esc(name)}</strong> · Сл. ${esc(r.dc)}</p>${field("Итог броска с модификаторами","total","","number",'min="-100" max="1000" step="1" required')}${extra?`<fieldset data-offline-extra hidden disabled>${extra}</fieldset>`:""}`,fdata,"Записать",(_event,dialog)=>{
+    const form=dialog.element.querySelector("form"),fields=form.querySelector("[data-offline-extra]");
+    if(!fields)return;
+    form.elements.total.addEventListener("input",()=>{
+      const input=form.elements.total;
+      const show=input.value!==""&&input.validity.valid&&(navigation?Number(input.value)<r.dc:Number(input.value)>=r.dc);
+      fields.hidden=fields.disabled=!show;
+    });
+  });
+}
 export async function prompt(title,content,read,ok="Сохранить",render) {
   return DialogV2.prompt({classes:["mjl-dialog"],window:{title},position:{width:500},content:`<div class="mjl-dialog-fields">${content}</div>`,rejectClose:false,render,ok:{label:ok,callback:(_event,b)=>read(b.form)}});
 }
@@ -22,7 +38,7 @@ function teleportOptions(scene,to,locationId) {
   const regions=game.user.isGM?Object.values(privateData(scene).regions):state(scene).regions.filter(r=>r.explored);
   return regions.filter(r=>r?.center).map(r=>`<optgroup label="${esc(r.name)}">${options(Object.fromEntries([[`${r.id}:`,"Центр региона"],...(r.locations??[]).filter(l=>game.user.isGM||l.revealed!==false).map(l=>[`${r.id}:${l.id}`,l.name])]),`${to}:${locationId??""}`)}</optgroup>`).join("");
 }
-const teleportHint='<p class="mjl-muted">Используйте заклинание или предмет штатно в dnd5e. Мастер подтверждает фактическое место прибытия; ресурсы предмета здесь не списываются.</p>';
+const teleportHint='<p class="mjl-muted">Разыграйте заклинание или предмет по правилам игры. Мастер подтверждает место прибытия.</p>';
 export async function confirm(title,content) { return DialogV2.confirm({classes:["mjl-dialog"],window:{title},content,rejectClose:false,yes:{label:"Подтвердить"},no:{label:"Отмена"}}); }
 export class PointcrawlApp extends ApplicationV2 {
   static instance;
@@ -85,7 +101,7 @@ export class PointcrawlApp extends ApplicationV2 {
     });
     root.addEventListener("toggle",event=>{if(event.target.dataset.pcSection)this.sections.set(event.target.dataset.pcSection,event.target.open);},true);
     root.addEventListener("invalid",event=>{for(let el=event.target.parentElement;el&&el!==root;el=el.parentElement)if(el.tagName==="DETAILS")el.open=true;},true);
-    root.addEventListener("input",event=>{if(event.target.closest("[data-form=region], [data-form=approve], [data-form=guide], [data-form=notes], [data-form=journey]")){this.dirty=true;this.element.querySelector(".mjl-footer [role=status]").textContent="Есть несохранённые изменения";}if(event.target.name==="json"){this.dirty=true;this.importParsed=null;this.element.querySelector("[data-pc-action=importTable]").disabled=true;}});
+    root.addEventListener("input",event=>{if(event.target.closest("[data-form=region], [data-form=approve], [data-form=guide], [data-form=notes], [data-form=journey], [data-form=offline]")){this.dirty=true;this.element.querySelector(".mjl-footer [role=status]").textContent="Есть несохранённые изменения";}if(event.target.name==="json"){this.dirty=true;this.importParsed=null;this.element.querySelector("[data-pc-action=importTable]").disabled=true;}});
     this.element.querySelector("[name=terrain]")?.addEventListener("change",event=>{
       const form=event.target.form,preset=TERRAIN[event.target.value];
       for(const key of ["maxPace","detection","navigationDC","searchDC","forageDC"]) form.elements[key].value=preset[key];
@@ -121,7 +137,7 @@ export class PointcrawlApp extends ApplicationV2 {
     return `<form data-form="journey"><fieldset ${state(scene).active?"disabled":""}><label>Передвижение<select name="mode">${options({walk:"Пешком",special:"Особое перемещение",vehicle:"Транспорт"},p.mode)}</select></label><div class="mjl-form-grid">${field("Особая скорость, футы","speed",p.speed,"number",'min="1" max="10000" step="any"')}${field("Скорость транспорта, миль/ч","mph",p.mph,"number",'min="0.01" max="10000" step="any"')}</div><label class="mjl-check"><input type="checkbox" name="ignoreTerrain" ${checked(p.ignoreTerrain)}>Полёт / игнорирует труднопроходимую местность</label><label class="mjl-check"><input type="checkbox" name="slower" ${checked(p.slower)}>Есть пеший участник со скоростью не выше половины обычной</label><p class="mjl-muted">Особое перемещение: миль/ч = скорость ÷ 10. За 8 часов при особой скорости: ${Math.floor(p.speed/10*8*2/3)} / ${Math.floor(p.speed/10*8)} / ${Math.floor(p.speed/10*8*4/3)} миль (медленно / нормально / быстро). Укажите мили маршрута для расчёта; иначе время задаётся вручную. Транспорт использует свою скорость без выбора темпа.</p><h4>Счётчик пути после общего долгого отдыха</h4><div class="mjl-form-grid">${field("Часы","hours",Math.floor(day.seconds/3600),"number",'min="0" max="10000" step="1"')}${field("Минуты","minutes",Math.floor(day.seconds%3600/60),"number",'min="0" max="59" step="1"')}</div><div class="mjl-actions"><button type="submit" ${state(scene).active?"disabled":""}>Сохранить</button></div></fieldset></form>`;
   }
   travel(scene) {
-    const s=state(scene),pcs=members(scene),here=s.regions.find(r=>r.id===s.currentRegionId);
+    const s=state(scene),pcs=participants(scene),here=s.regions.find(r=>r.id===s.currentRegionId);
     const actors=pcs.filter(a=>game.user.isGM||a.isOwner),disabled=!actors.length||s.active?"disabled":"";
     const locations=game.user.isGM?(privateData(scene).regions[here?.id]?.locations??here?.locations??[]):here?.locations??[];
     const routeRows=s.routes.filter(r=>r.from===s.currentRegionId||r.to===s.currentRegionId).map(r=>{
@@ -129,7 +145,7 @@ export class PointcrawlApp extends ApplicationV2 {
       return `<div class="mjl-row"><div><strong>${esc(dest?.explored?dest.name:"Неизвестный регион")}</strong><small>${secondsLabel(r.normalSeconds??r.seconds)} · ${s.journey?.profile?.mode==="vehicle"?"транспорт":`${PACE[r.normalPace??"normal"].name.toLowerCase()} темп`}${r.road?", дорога":""}</small></div><div class="mjl-row-actions">${game.user.isGM||dest?.explored?this.noteButton(to):""}${button("travel","В путь",`data-to="${to}" ${disabled} class="mjl-primary"`)}</div></div>`;
     }).join("");
     const actorCheck=actors.map(a=>`<label class="mjl-check"><input type="checkbox" name="actor" value="${a.id}" checked>${esc(a.name)}</label>`).join("");
-    const canChooseGuide=actors.length||partyToken(scene)?.isOwner,guideId=pcs.some(a=>a.id===s.guideId)?s.guideId:"";
+    const canChooseGuide=actors.length||!s.offline&&partyToken(scene)?.isOwner,guideId=pcs.some(a=>a.id===s.guideId)?s.guideId:"";
     const guide=`<form data-form="guide" class="mjl-guide"><label>Проводник по умолчанию<select name="guide" ${!canChooseGuide||s.active?"disabled":""}>${options({"":"Выбирать в заявке",...Object.fromEntries(pcs.map(a=>[a.id,a.name]))},guideId)}</select></label><button type="submit" ${!canChooseGuide||s.active?"disabled":""}>Назначить</button></form>`;
     const locationRows=locations.map(l=>`<div class="mjl-row"><div><strong>${esc(l.name)}</strong>${game.user.isGM&&!l.revealed?'<small>Скрыта от игроков</small>':""}</div><div class="mjl-row-actions">${this.noteButton(here.id,l.id)}${button("local","В путь",`data-id="${l.id}" ${disabled} class="mjl-primary"`)}</div></div>`).join("");
     return `<div class="mjl-two"><section><article class="mjl-panel"><div class="mjl-section-heading"><h3>Текущий регион</h3>${here&&(game.user.isGM||here.explored)?this.noteButton(here.id):""}</div><h2>${esc(here?(here.name??"Неизвестный регион"):"Группа не назначена")}</h2>${!here?'<p class="mjl-muted">Мастер должен назначить токен группы внутри региона.</p>':""}
@@ -142,22 +158,29 @@ export class PointcrawlApp extends ApplicationV2 {
   }
   party(scene) {
     const s=state(scene),token=partyToken(scene),d=privateData(scene);
-    return `<article class="mjl-panel"><h3>Настройка партии</h3><div class="mjl-guide"><label>Токен группы<select name="party">${scene.tokens.filter(t=>t.actor?.type==="group").map(t=>`<option value="${t.id}" ${token?.id===t.id?"selected":""}>${esc(t.name)}</option>`).join("")}</select></label>${button("party","Назначить")}</div><p>${members(scene).map(a=>esc(a.name)).join(", ")||"Партия не назначена"}</p>${button("centre","Открыть центр путешествий")}</article><article class="mjl-panel"><h3>Навигация вручную</h3><div class="mjl-actors">${members(scene).map((a,i)=>`<label class="mjl-check"><input type="radio" name="actor" value="${a.id}" ${i===0?"checked":""}>${esc(a.name)}</label>`).join("")}</div>${button("activity","Запросить проверку текущего региона",`data-kind="navigation" ${!members(scene).length||s.active?"disabled":""}`)}</article><article class="mjl-panel"><h3>Текущая заявка</h3>${s.active?this.requestSummary(s.active):"Нет активной заявки"}</article><article class="mjl-panel"><h3>Последние заявки</h3>${Object.values(d.requests).slice(-12).reverse().map(r=>`<div class="mjl-row"><span>${ACTIONS[r.kind]} · ${STATUS[r.status]}</span>${button("request","Открыть",`data-id="${r.id}"`)}</div>`).join("")}</article>${this.fold("scene","Параметры сцены",button("disable","Отключить режим сцены",'class="mjl-danger"'))}`;
+    const offlineSettings=`<form data-form="offline"><fieldset ${s.active?"disabled":""}>
+      <label class="mjl-check"><input type="checkbox" name="enabled" ${checked(s.offline)}>Офлайн-режим</label>
+      ${area("Участники за столом, по одному имени на строку","names",d.offline?.roster.map(p=>p.name).join("\n")??"")}
+      <p class="mjl-muted">Мастер вводит результаты бросков вручную. Токен актёра «Группа» может быть пустым. Пустой список ведёт одну запись «Группа».</p>
+      <div class="mjl-actions"><button type="submit">Сохранить режим</button></div>
+    </fieldset></form>`;
+    return `<article class="mjl-panel"><h3>Настройка партии</h3><div class="mjl-guide"><label>Токен группы<select name="party">${scene.tokens.filter(t=>t.actor?.type==="group").map(t=>`<option value="${t.id}" ${token?.id===t.id?"selected":""}>${esc(t.name)}</option>`).join("")}</select></label>${button("party","Назначить")}</div><p>${participants(scene).map(a=>esc(a.name)).join(", ")||"Партия не назначена"}</p>${button("centre","Открыть центр путешествий")}${this.fold("offline","Офлайн-режим",offlineSettings,!!s.offline)}</article><article class="mjl-panel"><h3>Навигация вручную</h3><div class="mjl-actors">${participants(scene).map((a,i)=>`<label class="mjl-check"><input type="radio" name="actor" value="${a.id}" ${i===0?"checked":""}>${esc(a.name)}</label>`).join("")}</div>${button("activity","Запросить проверку текущего региона",`data-kind="navigation" ${!participants(scene).length||s.active?"disabled":""}`)}</article><article class="mjl-panel"><h3>Текущая заявка</h3>${s.active?this.requestSummary(s.active):"Нет активной заявки"}</article><article class="mjl-panel"><h3>Последние заявки</h3>${Object.values(d.requests).slice(-12).reverse().map(r=>`<div class="mjl-row"><span>${ACTIONS[r.kind]} · ${STATUS[r.status]}</span>${button("request","Открыть",`data-id="${r.id}"`)}</div>`).join("")}</article>${this.fold("scene","Параметры сцены",button("disable","Отключить режим сцены",'class="mjl-danger"'))}`;
   }
   requestPanel(scene,value,data) {
     const gm=game.user.isGM,r=data?.requests[value.id]??value;
-    const actors=(r.actors??[]).map(a=>typeof a==="string"?{id:a,name:game.actors.get(a)?.name??"Удалён"}:a);
+    const actors=(r.actors??[]).map(a=>typeof a==="string"?{id:a,name:participantName(r,a)}:a);
+    const offline=!!r.offlineParticipants||r.offline;
     const p=state(scene).active?.id===r.id?state(scene).active:null;
     const destId=r.kind==="teleport"?r.to:r.regionId;
     const destination=["local","teleport"].includes(r.kind)?(data?(r.locationId?data.regions[destId]?.locations.find(l=>l.id===r.locationId)?.name??"Удалённая локация":`Центр: ${data.regions[destId]?.name}`):r.destination):r.to?(data?.regions[r.to]?.name??p?.destination??r.destination):null;
     const facts=[["Назначение",destination],["Передвижение",r.profile?.mode==="special"?`Особое: ${r.profile.speed} футов`:r.profile?.mode==="vehicle"?`Транспорт: ${r.profile.mph} миль/ч`:null],["Ограничение",r.profile?.slower&&r.profile.mode==="walk"?"Замедленный участник — только медленный темп":null],["Регион",data?.regions[r.regionId]?.name??r.origin],["Время",r.seconds!=null?secondsLabel(r.seconds):null],["Темп",r.kind==="travel"?`${PACE[r.effectivePace??r.pace]?.name}${r.road?" (есть дорога)":""}`:null],["Источник",r.kind==="teleport"?r.source||"Укажет мастер":null],["Потеря пути",r.penalty?`+${r.penalty}%`:null]].filter(([,v])=>v!=null);
-    let html=`<p class="mjl-request-status">${STATUS[r.status]}</p><dl class="mjl-facts">${facts.map(([k,v])=>`<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`;
+    let html=`<p class="mjl-request-status">${STATUS[r.status]}${offline?" · Офлайн":""}</p><dl class="mjl-facts">${facts.map(([k,v])=>`<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`;
     const moving=["travel","local"].includes(r.kind),day=r.daySeconds??state(scene).journey?.seconds??0,remaining=Math.max(0,(r.seconds??0)-(r.elapsedSeconds??0));
     if(moving)html+=`<p>В пути после долгого отдыха: <strong>${secondsLabel(day)} / 8 ч</strong>. Осталось по заявке: ${r.seconds==null?"время назначит мастер":secondsLabel(remaining)}.</p>${r.elapsedSeconds?`<p class="mjl-muted">Уже пройдено в этом переходе: ${secondsLabel(r.elapsedSeconds)}. Токен прибудет в конечную точку после завершения всего этапа.</p>`:""}`;
     if(moving&&r.phase!=="marchSave"&&["pending","approved","camp"].includes(r.status)&&(day>=TRAVEL_LIMIT||day+remaining>TRAVEL_LIMIT))html+=`<section class="mjl-roll-info"><h3>${day>=TRAVEL_LIMIT?"Группа уже прошла 8 часов":"Этот переход превысит 8 часов пути"}</h3><p>${day>=TRAVEL_LIMIT?"Для продолжения выберите долгий отдых или марш.":"На 8-м часу переход остановится. Можно заранее заявить отдых в пути или попросить разрешение на марш."}</p>${r.restAtLimit?'<p>Запланирован долгий отдых на 8-м часу.</p>':""}${r.march?'<p>Марш разрешён мастером.</p>':r.marchRequested?'<p>Запрошен марш — ожидается решение мастера.</p>':""}<div class="mjl-grid-buttons">${button("journeyRest","Долгий отдых в пути",`data-id="${r.id}"`)}${button("journeyMarch","Заявить марш",`data-id="${r.id}"`)}${gm&&r.marchRequested&&r.status!=="pending"?button("allowMarch","Разрешить марш",`data-id="${r.id}" class="mjl-primary"`):""}</div></section>`;
-    if(r.phase==="marchSave")html+=`<section class="mjl-roll-info"><h3>Марш · спасбросок Телосложения</h3><p>Сл. <strong>${r.dc}</strong>. Каждый участник бросает за себя. Провал: +1 степень истощения после подтверждения мастером.</p></section>`;
+    if(r.phase==="marchSave")html+=`<section class="mjl-roll-info"><h3>Марш · спасбросок Телосложения</h3><p>Сл. <strong>${r.dc}</strong>. ${offline?"Внесите итоги бросков с реального стола. При провале отметьте +1 степень истощения на листе персонажа.":"Каждый участник бросает за себя. Провал: +1 степень истощения после подтверждения мастером."}</p></section>`;
     if(r.status==="suspended")html+=`<p>Переход продолжится после общего долгого отдыха.</p>${button("request","Открыть заявку отдыха",`data-id="${r.restId}"`)}`;
-    if(r.stages?.some(s=>s.type==="checks"))html+=`<details class="mjl-fold"><summary>Результаты марша</summary><div class="mjl-fold-content">${r.stages.filter(s=>s.type==="checks").map(s=>`<p>${secondsLabel(s.total)} в пути · Сл. ${s.dc}: ${Object.entries(s.outcomes).map(([id,o])=>`${esc(game.actors.get(id)?.name??"Удалён")}: ${esc(o.label)}`).join("; ")}</p>`).join("")}</div></details>`;
+    if(r.stages?.some(s=>s.type==="checks"))html+=`<details class="mjl-fold"><summary>Результаты марша</summary><div class="mjl-fold-content">${r.stages.filter(s=>s.type==="checks").map(s=>`<p>${secondsLabel(s.total)} в пути · Сл. ${s.dc}: ${Object.entries(s.outcomes).map(([id,o])=>`${esc(participantName(r,id))}: ${esc(o.label)}`).join("; ")}</p>`).join("")}</div></details>`;
     if(r.kind==="teleport")html+=teleportHint;
     if(r.status!=="pending"&&r.phase!=="marchSave"&&["travel","local","navigation","search","forage"].includes(r.kind)&&needsParticipant(r))html+=`<section class="mjl-roll-info"><h3>${r.kind==="search"?"Мудрость (Внимательность)":"Мудрость (Выживание)"}</h3><p>Сложность: <strong>${r.dc}</strong></p>${["travel","local"].includes(r.kind)?'<p class="mjl-muted">При провале: +1d6 × 10% к времени.</p>':""}</section>`;
     if(["travel","local"].includes(r.kind)&&!r.risk&&!r.navigationDone&&r.phase!=="marchSave"&&r.status!=="pending")html+='<p class="mjl-muted">Проверка навигации не требуется.</p>';
@@ -165,13 +188,15 @@ export class PointcrawlApp extends ApplicationV2 {
     const reject=rejectable?button("reject",moving&&r.elapsedSeconds?"Прервать переход":"Отклонить",`data-id="${r.id}"`):"";
     if(gm&&r.status==="pending") {
       const multi=["short","long","forage","search"].includes(r.kind);
-      html+=`<form data-form="approve" data-id="${r.id}"><fieldset><legend>${r.kind==="teleport"?"Кто телепортирует":["local","travel"].includes(r.kind)?"Проводник":multi?"Участники":"Участник проверки"}</legend><div class="mjl-actor-picker">${members(scene).map(a=>`<label class="mjl-check"><input type="${multi?"checkbox":"radio"}" name="actor" value="${a.id}" ${checked(actors.some(x=>x.id===a.id))}>${esc(a.name)}</label>`).join("")}</div></fieldset>
+      html+=`<form data-form="approve" data-id="${r.id}"><fieldset><legend>${r.kind==="teleport"?"Кто телепортирует":["local","travel"].includes(r.kind)?"Проводник":multi?"Участники":"Участник проверки"}</legend><div class="mjl-actor-picker">${participants(scene).map(a=>`<label class="mjl-check"><input type="${multi?"checkbox":"radio"}" name="actor" value="${a.id}" ${checked(actors.some(x=>x.id===a.id))}>${esc(a.name)}</label>`).join("")}</div></fieldset>
       ${r.kind==="teleport"?`<label>Фактическое место прибытия<select name="destination" required>${teleportOptions(scene,r.to,r.locationId)}</select></label>${field("Заклинание или предмет","source",r.source??"","text",'maxlength="200"')}`:r.kind==="travel"?`<div class="mjl-form-grid">${field("Время маршрута, часы","baseHours",r.baseSeconds/3600,"number",'min="0.001" step="any"')}<label>Темп<select name="pace" ${r.profile?.mode==="vehicle"?"disabled":""}>${options(Object.fromEntries((r.paces??Object.keys(PACE)).map(k=>[k,PACE[k]])),r.pace)}</select></label></div>${r.profile?.mode!=="walk"&&r.miles!=null?`<p>Расстояние: ${r.miles} миль; время рассчитано по скорости.</p><label class="mjl-check"><input type="checkbox" name="manualTime">Задать время вручную вместо расчёта по расстоянию</label>`:""}${r.road?"":field("Сл. навигации","dc",r.dc,"number",'min="0" max="100" step="1"')}<label class="mjl-check"><input type="checkbox" name="risk" ${checked(r.risk)} ${r.road?"disabled":""}>${r.road?"Есть дорога — заблудиться нельзя":"Можно потеряться"}</label>`:r.kind==="local"?`<div class="mjl-form-grid">${field("Часы","hours",Math.floor((r.baseSeconds??r.seconds??0)/3600),"number",'min="0" max="8760" step="1" required')}${field("Минуты","minutes",Math.floor((r.baseSeconds??r.seconds??0)%3600/60),"number",'min="0" max="59" step="1" required')}</div><label class="mjl-check"><input type="checkbox" name="risk" ${checked(r.risk)}>Можно потеряться</label>${field("Сл. навигации","dc",r.dc??data.regions[r.regionId].navigationDC,"number",'min="0" max="100" step="1"')}`:r.kind!=="navigation"?field("Продолжительность, минуты","minutes",r.seconds==null?"":r.seconds/60,"number",'min="1" step="any" required'):""}${moving?`<p class="mjl-time-preview" data-time-preview role="status"></p><label class="mjl-check"><input type="checkbox" name="march" ${checked(r.march)}>Разрешить марш сверх 8 часов</label>`:""}<div class="mjl-actions">${reject}<button type="submit" class="mjl-primary">Одобрить</button></div></form>`;
     }
     html+=(gm&&r.status==="pending"?[]:actors).map(a=>{
       const out=r.outcomes?.[a.id],running=r.running?.[a.id],assigned=game.users.get(r.assignedUsers?.[a.id]);
-      const can=(gm||(game.actors.get(a.id)?.isOwner&&(!r.assignedUsers?.[a.id]||r.assignedUsers[a.id]===game.user.id)))&&r.status==="approved"&&needsParticipant(r);
-      return `<div class="mjl-row"><div><strong>${esc(a.name)}</strong><small>${r.status==="pending"?"Ждёт решения мастера":!needsParticipant(r)?"Бросок не требуется":out?esc(out.label):running?"Выполняется / ожидает восстановления":"Ожидает"}</small>${assigned?`<small>Игрок: ${esc(assigned.name)}</small>`:""}</div><div class="mjl-row-actions">${can&&!out&&!running?button("perform",["short","long"].includes(r.kind)?"Отдыхать":"Бросить",`data-id="${r.id}" data-actor="${a.id}" class="mjl-primary"`):""}${gm&&running?button("recoverRoll","Проверить попытку",`data-id="${r.id}" data-actor="${a.id}"`):""}</div></div>`;
+      const can=(gm||!offline&&game.actors.get(a.id)?.isOwner&&(!r.assignedUsers?.[a.id]||r.assignedUsers[a.id]===game.user.id))&&r.status==="approved"&&needsParticipant(r);
+      const rest=["short","long"].includes(r.kind);
+      const label=offline?(rest?"Подтвердить отдых":"Ввести результат"):(rest?"Отдыхать":"Бросить");
+      return `<div class="mjl-row"><div><strong>${esc(a.name)}</strong><small>${r.status==="pending"?"Ждёт решения мастера":!needsParticipant(r)?"Бросок не требуется":out?esc(out.label):running?"Выполняется / ожидает восстановления":"Ожидает"}</small>${assigned?`<small>Игрок: ${esc(assigned.name)}</small>`:""}</div><div class="mjl-row-actions">${can&&!out&&!running?button(offline?"manualRoll":"perform",label,`data-id="${r.id}" data-actor="${a.id}" data-step="${r.step??0}" class="mjl-primary"`):""}${gm&&running?button("recoverRoll","Проверить попытку",`data-id="${r.id}" data-actor="${a.id}"`):""}</div></div>`;
     }).join("");
     if(gm&&r.kind==="search"&&r.status==="approved"&&Object.keys(r.outcomes).length&&!r.revealedId) {
       const region=data.regions[r.regionId],total=Math.max(...Object.values(r.outcomes).map(o=>o.total??-Infinity));
@@ -228,7 +253,7 @@ export class PointcrawlApp extends ApplicationV2 {
     if(!d.regions[this.regionId])this.regionId=regions[0]?.id??"";
     const r=d.regions[this.regionId];
     const importer=`<input type="file" name="jsonFile" accept=".json,application/json"><label>Текст JSON<textarea name="json" rows="8" placeholder='{"schemaVersion":1,"name":"События","results":[{"weight":1,"title":"Встреча","text":"Описание"}]}'></textarea></label><div class="mjl-import-preview" role="status"></div><div class="mjl-actions">${button("previewImport","Проверить")}<button type="button" data-pc-action="importTable" class="mjl-primary" disabled>Создать таблицу</button></div><p class="mjl-muted">Пример JSON и запрос для нейросети находятся в руководстве.</p>`;
-    return `<article class="mjl-panel"><h3>События региона</h3><div class="mjl-guide"><label>Регион<select name="tableRegion">${options(Object.fromEntries(regions.map(r=>[r.id,r.name])),this.regionId)}</select></label>${button("selectTableRegion","Выбрать")}</div>${r?`<div class="mjl-table-drop">Перетащите таблицу из мира</div><div class="mjl-guide"><label>Случайная таблица<select name="table">${game.tables.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join("")}</select></label>${button("attachTable","Привязать")}</div>${r.tables.map(id=>`<div class="mjl-row"><strong>${esc(game.tables.get(id)?.name??"Таблица удалена")}</strong><div class="mjl-row-actions">${button("event","Бросить мастеру",`data-id="${id}"`)}${button("detachTable","Отвязать",`data-id="${id}"`)}</div></div>`).join("")}${this.fold("import","Импортировать JSON",importer)}`:"Сначала создайте регион."}</article>`;
+    return `<article class="mjl-panel"><h3>События региона</h3><div class="mjl-guide"><label>Регион<select name="tableRegion">${options(Object.fromEntries(regions.map(r=>[r.id,r.name])),this.regionId)}</select></label>${button("selectTableRegion","Выбрать")}</div>${r?`<div class="mjl-table-drop">Перетащите таблицу из мира</div><div class="mjl-guide"><label>Случайная таблица<select name="table">${game.tables.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join("")}</select></label>${button("attachTable","Привязать")}</div>${r.tables.map(id=>`<div class="mjl-row"><strong>${esc(game.tables.get(id)?.name??"Таблица удалена")}</strong><div class="mjl-row-actions">${button("event",state(scene).offline?"Ввести результат":"Бросить мастеру",`data-id="${id}"`)}${button("detachTable","Отвязать",`data-id="${id}"`)}</div></div>`).join("")}${this.fold("import","Импортировать JSON",importer)}`:"Сначала создайте регион."}</article>`;
   }
   async submit(form) {
     const f=fdata(form);
@@ -237,6 +262,8 @@ export class PointcrawlApp extends ApplicationV2 {
       await request("region",{regionId:form.dataset.id,values});
     } else if(form.dataset.form==="journey") {
       await request("journeySettings",{hours:f.hours,minutes:f.minutes,profile:{mode:f.mode,speed:f.speed,mph:f.mph,ignoreTerrain:form.elements.ignoreTerrain.checked,slower:form.elements.slower.checked}},this.scene);
+    } else if(form.dataset.form==="offline") {
+      await request("offlineSettings",{enabled:form.elements.enabled.checked,names:f.names},this.scene);
     } else if(form.dataset.form==="notes") {
       await request("notes",{regionId:this.regionId,locationId:this.locationId,notes:f.notes},this.scene);
     } else if(form.dataset.form==="guide") {
@@ -267,7 +294,7 @@ export class PointcrawlApp extends ApplicationV2 {
     if(action==="activity"||action==="travel"||action==="local") {
       let actors=this.chosenActors();
       if(action==="activity"&&b.dataset.kind==="search") {
-        const selected=await prompt("Участники поиска",`<div class="mjl-actor-picker">${members(scene).map(a=>`<label class="mjl-check"><input type="checkbox" name="actor" value="${a.id}" ${checked(actors.includes(a.id))}>${esc(a.name)}</label>`).join("")}</div><label class="mjl-check"><input type="checkbox" name="all">Все участники партии</label>`,f=>new FormData(f).getAll("actor"),"Отправить заявку",(_event,dialog)=>{
+        const selected=await prompt("Участники поиска",`<div class="mjl-actor-picker">${participants(scene).map(a=>`<label class="mjl-check"><input type="checkbox" name="actor" value="${a.id}" ${checked(actors.includes(a.id))}>${esc(a.name)}</label>`).join("")}</div><label class="mjl-check"><input type="checkbox" name="all">Все участники партии</label>`,f=>new FormData(f).getAll("actor"),"Отправить заявку",(_event,dialog)=>{
           const form=dialog.element.querySelector('form'),checks=[...form.querySelectorAll('[name=actor]')],all=form.elements.all;
           all.checked=checks.every(c=>c.checked);all.addEventListener('change',()=>{for(const c of checks)c.checked=all.checked;});
           for(const c of checks)c.addEventListener('change',()=>{all.checked=checks.every(c=>c.checked);});
@@ -279,6 +306,12 @@ export class PointcrawlApp extends ApplicationV2 {
       RequestWindow.open({sceneId:scene.id,requestId});return;
     }
     if(action==="perform")return perform(scene,b.dataset.id,b.dataset.actor);
+    if(action==="manualRoll") {
+      const r=d.requests[b.dataset.id],actorId=b.dataset.actor;
+      const values=["short","long"].includes(r.kind)?{}:await offlineRoll(r,participantName(r,actorId));
+      if(values)return request("recordOffline",{...values,requestId:r.id,actorId,step:Number(b.dataset.step)},scene);
+      return;
+    }
     if(["finish","reject","recover"].includes(action))return request(action,{requestId:b.dataset.id,step:Number(b.dataset.step)},scene);
     if(action==="journeyRest"||action==="journeyMarch")return request("journeyChoice",{requestId:b.dataset.id,choice:action==="journeyRest"?"rest":"march"},scene);
     if(action==="allowMarch")return request("allowMarch",{requestId:b.dataset.id},scene);
@@ -311,7 +344,11 @@ export class PointcrawlApp extends ApplicationV2 {
     if(action==="selectTableRegion") {this.regionId=this.element.querySelector("[name=tableRegion]").value;return;}
     if(action==="attachTable")return request("table",{regionId:this.regionId,tableId:this.element.querySelector("[name=table]").value});
     if(action==="detachTable")return request("table",{regionId:this.regionId,tableId:b.dataset.id,remove:true});
-    if(action==="event")return request("event",{regionId:this.regionId,tableId:b.dataset.id});
+    if(action==="event") {
+      const values=state(scene).offline?await prompt("Результат таблицы событий",field("Итог броска","total","","number",'step="1" required'),fdata,"Записать"):{};
+      if(values)return request("event",{...values,regionId:this.regionId,tableId:b.dataset.id},scene);
+      return;
+    }
     if(action==="previewImport") {this.previewImport();this.dirty=true;return;}
     if(action==="importTable") {need(this.importParsed,"Сначала проверьте JSON.");await request("table",{regionId:this.regionId,json:this.importParsed});this.importParsed=null;return;}
   }
@@ -422,7 +459,7 @@ export class RequestWindow extends PointcrawlApp {
       const actors=r.actors.filter(a=>game.actors.get(a.id)?.isOwner&&(!r.assignedUsers?.[a.id]||r.assignedUsers[a.id]===game.user.id)&&!r.outcomes?.[a.id]&&!r.running?.[a.id]);
       const decision=["travel","local"].includes(r.kind)&&["pending","approved","camp"].includes(r.status)&&r.phase!=="marchSave"&&((r.daySeconds??0)>=TRAVEL_LIMIT||(r.daySeconds??0)+Math.max(0,(r.seconds??0)-(r.elapsedSeconds??0))>TRAVEL_LIMIT);
       const gm=game.users.activeGM?.isSelf&&(r.status==="pending"||r.status==="camp"||r.phase==="marchSave"||r.status==="approved"&&r.navigationDone&&r.restId);
-      const player=!game.user.isGM&&((r.status==="approved"&&needsParticipant(r)&&actors.length)||(decision&&members(scene).some(a=>a.isOwner)));
+      const player=!game.user.isGM&&((r.status==="approved"&&needsParticipant(r)&&actors.length)||(decision&&participants(scene).some(a=>a.isOwner)));
       if(!gm&&!player)continue;
       const key=`${scene.id}:${r.id}:${r.step??0}:${r.phase??""}:${gm?"gm":`player:${actors.map(a=>a.id).sort().join(",")}`}`;
       if(this.prompted.has(key))continue;

@@ -7,6 +7,14 @@ let socket, queue=Promise.resolve();
 export const state = scene => scene?.getFlag(ID,"state") ?? {enabled:false,regions:[],routes:[],active:null};
 export const partyToken = scene => scene?.tokens.get(state(scene).tokenId);
 export const members = scene => partyToken(scene)?.actor?.system.playerCharacters ?? [];
+export function participants(scene,data=privateData(scene)) {
+  if(!(data.offline?.enabled??state(scene).offline))return members(scene);
+  if(!data.offline||!partyToken(scene))return [];
+  return data.offline.roster.length?data.offline.roster:[{id:`offline-${scene.id}`,name:"Группа"}];
+}
+export function participantName(r,id) {
+  return r.offlineParticipants?.find(p=>p.id===id)?.name??r.actors.find(p=>p.id===id)?.name??game.actors.get(id)?.name??"Удалённый персонаж";
+}
 export const needsParticipant = r => r.phase==="marchSave"||(!["travel","local","teleport"].includes(r.kind)||!!r.risk&&!r.navigationDone);
 export function journey(scene,data=privateData(scene)) {
   const id=partyToken(scene)?.actor?.id;
@@ -15,13 +23,14 @@ export function journey(scene,data=privateData(scene)) {
 }
 export function partyProfile(scene,data=privateData(scene)) {
   const p=movementProfile(journey(scene,data).profile);
-  if(p.mode==="walk"&&members(scene).some(a=>{const base=Number(a._source?.system?.attributes?.movement?.walk);return base>0&&Number(a.system.attributes?.movement?.walk)<=base/2;}))p.slower=true;
+  if(!data.offline?.enabled&&p.mode==="walk"&&members(scene).some(a=>{const base=Number(a._source?.system?.attributes?.movement?.walk);return base>0&&Number(a.system.attributes?.movement?.walk)<=base/2;}))p.slower=true;
   return p;
 }
 function activeElsewhere(scene,partyId) {
   return [...privateEntries.values()].some(doc=>{const id=doc.getFlag(ID,"sceneId"),data=doc.getFlag(ID,"data"),r=data?.requests?.[data.activeId];return id!==scene.id&&game.scenes.has(id)&&!!r&&(r.partyId??partyToken(game.scenes.get(id))?.actor?.id)===partyId;});
 }
 function assignUsers(scene,r) {
+  if(r.offlineParticipants){r.assignedUsers={};return;}
   r.assignedUsers=Object.fromEntries(r.actors.map(id=>{
     const owners=game.users.filter(u=>!u.isGM&&game.actors.get(id)?.testUserPermission(u,"OWNER")).sort((a,b)=>a.id.localeCompare(b.id));
     const owner=owners.find(u=>u.active&&u.character?.id===id)??owners.find(u=>u.active&&u.id===r.createdBy)??owners.find(u=>u.active)??owners[0];return [id,owner?.id??null];
@@ -48,16 +57,22 @@ async function save(scene,data) {
   // Compendium updates can return a fresh Document instead of updating the instance in our map.
   privateEntries.set(scene.id,updated??doc);
 }
-const memberIds = scene => members(scene).map(a=>a.id);
+const memberIds = (scene,data) => participants(scene,data).map(a=>a.id);
 const alreadyForaged = (data,id,day) => data.foraged[id]===day || [...privateEntries.values()].some(doc=>doc.getFlag(ID,"data")?.foraged?.[id]===day);
 const gmOnly = user => need(user?.isGM,"Это действие доступно только мастеру.");
 const current = (scene,data) => data.regions[state(scene).currentRegionId];
 const active = data => data.requests[data.activeId];
 const requestById = (data,id) => { const r=data.requests[id]; need(r,"Заявка не найдена."); return r; };
-function ownsParty(user,scene) { need(user.isGM || partyToken(scene)?.testUserPermission(user,"OWNER") || members(scene).some(a=>a.testUserPermission(user,"OWNER")),"Нет права управлять этой партией."); }
+function ownsParty(user,scene,data) {
+  need(user.isGM||!data.offline?.enabled,"Офлайн-партией управляет мастер.");
+  need(user.isGM || partyToken(scene)?.testUserPermission(user,"OWNER") || members(scene).some(a=>a.testUserPermission(user,"OWNER")),"Нет права управлять этой партией.");
+}
 function region(data,id) { const r=data.regions[id]; need(r,"Регион не найден."); return r; }
 function checkScene(scene) { need(scene && state(scene).enabled,"Включите Pointcrawl для этой сцены."); }
-function checkParty(scene) { need(partyToken(scene)?.actor?.type==="group" && members(scene).length,"Назначьте токен актёра «Группа» с персонажами-участниками."); }
+function checkParty(scene,data) {
+  need(partyToken(scene)?.actor?.type==="group","Назначьте токен актёра «Группа».");
+  need(participants(scene,data).length,"Добавьте персонажей в группу или включите офлайн-режим.");
+}
 function route(data,from,to) { return data.routes.find(r=>(r.from===from&&r.to===to)||(r.from===to&&r.to===from)); }
 export function regionAt(scene,point,includeDrafts=false) {
   const contains=r=>(includeDrafts?isBoundary(r):r.getFlag(ID,"region"))&&r.polygonTree.testPoint(point);
@@ -90,7 +105,7 @@ export function publicRequest(r,scene,data) {
   if(!r) return null;
   const dest=data.regions[r.to??r.regionId],location=r.locationId?dest?.locations.find(l=>l.id===r.locationId):null;
   const destination=["local","teleport"].includes(r.kind)?(r.locationId?(dest?.explored&&location?.revealed?location.name:"Скрытая локация"):`Центр: ${dest?.explored?dest.name:"Неизвестный регион"}`):r.to?(dest?.explored?dest.name:"Неизвестный регион"):null;
-  return {id:r.id,sceneId:scene.id,kind:r.kind,status:r.status,createdBy:r.createdBy,assignedUsers:clone(r.assignedUsers??{}),actors:r.actors.map(id=>({id,name:game.actors.get(id)?.name??"Удалённый персонаж"})),
+  return {id:r.id,sceneId:scene.id,kind:r.kind,status:r.status,offline:!!r.offlineParticipants,createdBy:r.createdBy,assignedUsers:clone(r.assignedUsers??{}),actors:r.actors.map(id=>({id,name:participantName(r,id)})),
     regionId:r.regionId,from:r.from,to:r.to,locationId:r.locationId,pace:r.pace,paces:r.paces,miles:r.miles,effectivePace:r.effectivePace,road:!!r.road,source:r.source,seconds:r.seconds,baseSeconds:r.baseSeconds,risk:r.risk,dc:r.dc,penalty:r.penalty,
     origin:data.regions[r.regionId]?.explored?data.regions[r.regionId].name:"Неизвестный регион",
     destination,
@@ -107,7 +122,7 @@ export async function publish(scene,data,extra={}) {
     const profile=partyProfile(scene,data),paces=allowedPaces(data.regions[to],!!r.road,profile),pace=paces.includes("normal")?"normal":paces.at(-1);
     return {id:r.id,from:r.from,to:r.to,seconds:r.seconds,miles:r.miles,road:!!r.road,normalPace:pace,normalSeconds:journeySeconds(r.seconds,pace,data.regions[to],!!r.road,profile,r.miles),paces,name:data.regions[to]?.explored?data.regions[to].name:"?"};
   });
-  const snapshot={...old,...extra,regions,routes,journey:journey(scene,data),active:publicRequest(active(data),scene,data)};
+  const snapshot={...old,...extra,regions,routes,offline:!!data.offline?.enabled,journey:journey(scene,data),active:publicRequest(active(data),scene,data)};
   await scene.update({flags:{...scene.flags,[ID]:{...scene.flags?.[ID],state:snapshot}}},{diff:false,recursive:false});
   await syncJournals(scene,data);
   Hooks.callAll(`${ID}.refresh`);
@@ -125,17 +140,19 @@ async function persist(scene,data,r) { await save(scene,data); await publish(sce
 
 async function createRequest(scene,data,kind,user,args,parent=null) {
   need(Object.hasOwn(ACTIONS,kind),"Неизвестное действие партии.");
-  checkParty(scene); ownsParty(user,scene);
+  checkParty(scene,data); ownsParty(user,scene,data);
   need(!active(data)||active(data)===parent||["done","rejected"].includes(active(data).status),"Сначала завершите текущую заявку партии.");
   const partyId=partyToken(scene).actor.id;
   need(!activeElsewhere(scene,partyId),"У этой партии есть незавершённая заявка на другой сцене.");
   const here=current(scene,data); need(here,"Установите токен группы внутри региона и назначьте текущий регион.");
-  let actors=args.actors ?? members(scene).filter(a=>user.isGM||a.testUserPermission(user,"OWNER")).map(a=>a.id);
-  need(Array.isArray(actors) && actors.length && new Set(actors).size===actors.length && actors.every(id=>memberIds(scene).includes(id)),"Выберите участников партии без повторений.");
+  const roster=participants(scene,data);
+  let actors=args.actors ?? roster.filter(a=>user.isGM||a.testUserPermission(user,"OWNER")).map(a=>a.id);
+  need(Array.isArray(actors) && actors.length && new Set(actors).size===actors.length && actors.every(id=>memberIds(scene,data).includes(id)),"Выберите участников партии без повторений.");
   if(!user.isGM&&kind!=="search") need(actors.every(id=>game.actors.get(id).testUserPermission(user,"OWNER")),"Можно заявлять действия только своих персонажей.");
-  if(["travel","local"].includes(kind)&&memberIds(scene).includes(state(scene).guideId))actors=[state(scene).guideId];
+  if(["travel","local"].includes(kind)&&memberIds(scene,data).includes(state(scene).guideId))actors=[state(scene).guideId];
   if(["navigation","travel","local","teleport"].includes(kind)) actors=[actors[0]];
   const r={id:uid(),kind,partyId,status:"pending",createdBy:user.id,regionId:here.id,actors,outcomes:{},running:{},seconds:3600,pace:args.pace??"normal",penalty:0,step:0,elapsedSeconds:0,profile:partyProfile(scene,data)};
+  if(data.offline?.enabled)r.offlineParticipants=roster;
   if(kind==="teleport") {
     const target=teleportTarget(scene,data,args.to,args.locationId,user),origin=tokenPoint(partyToken(scene));
     need(Math.hypot(target.x-origin.x,target.y-origin.y)>2,"Группа уже находится в этой точке.");
@@ -154,7 +171,7 @@ async function createRequest(scene,data,kind,user,args,parent=null) {
     r.seconds=CONFIG.DND5E.restTypes[kind].duration[game.settings.get("dnd5e","restVariant")]*60;
   } else if(kind==="navigation") { gmOnly(user); r.seconds=0; r.dc=here.navigationDC; }
   else r.dc=kind==="forage"?here.forageDC:here.searchDC;
-  if(kind==="forage") for(const id of actors) need(!alreadyForaged(data,id,dayOf(game.time.worldTime)),`${game.actors.get(id).name} уже искал пропитание в эти сутки.`);
+  if(kind==="forage") for(const id of actors) need(!alreadyForaged(data,id,dayOf(game.time.worldTime)),`${participantName(r,id)} уже искал пропитание в эти сутки.`);
   if(parent){parent.resumeStatus=parent.status==="pending"?"pending":"approved";parent.status="suspended";parent.restId=r.id;r.resumeId=parent.id;}
   data.requests[r.id]=r; data.activeId=r.id;
   await save(scene,data);
@@ -166,9 +183,9 @@ async function createRequest(scene,data,kind,user,args,parent=null) {
 
 async function approve(scene,data,r,args,user) {
   gmOnly(user); need(r.status==="pending","Эта заявка уже рассмотрена.");
-  checkParty(scene); need(r.regionId===state(scene).currentRegionId,"Партия уже находится в другом регионе.");
+  checkParty(scene,data); need(r.regionId===state(scene).currentRegionId,"Партия уже находится в другом регионе.");
   const actors=args.actors??r.actors;
-  need(Array.isArray(actors)&&actors.length&&new Set(actors).size===actors.length&&actors.every(id=>memberIds(scene).includes(id)),"Недопустимый состав участников.");
+  need(Array.isArray(actors)&&actors.length&&new Set(actors).size===actors.length&&actors.every(id=>memberIds(scene,data).includes(id)),"Недопустимый состав участников.");
   need(!["travel","local","teleport","navigation"].includes(r.kind)||actors.length===1,"Нужен один участник проверки.");
   if(r.kind==="local")localTarget(scene,data,r.locationId,user);
   r.actors=actors;
@@ -187,11 +204,11 @@ async function approve(scene,data,r,args,user) {
     r.dc=number(args.dc??r.dc??current(scene,data).navigationDC,"Сл. навигации",0,100,true);
   } else if(r.kind!=="navigation") r.seconds=number(args.seconds??r.seconds,"Продолжительность",60,31536000);
   if(r.kind==="forage") for(const id of r.actors) need(!alreadyForaged(data,id,dayOf(game.time.worldTime)),"Кто-то из участников уже искал пропитание в эти сутки.");
-  if(r.resumeId)need(memberIds(scene).every(id=>r.actors.includes(id)),"Для общего отдыха в пути утвердите всех участников партии.");
+  if(r.resumeId)need(memberIds(scene,data).every(id=>r.actors.includes(id)),"Для общего отдыха в пути утвердите всех участников партии.");
   if(["travel","local"].includes(r.kind)){need(typeof (args.march??false)==="boolean","Недопустимое разрешение марша.");r.march=args.march??false;if(r.march){r.marchRequested=false;r.restAtLimit=false;}}
   assignUsers(scene,r);
   r.status="approved";
-  if(r.kind==="short"||r.kind==="long") await game.messages.get(r.messageId)?.update({"system.data":{type:r.kind,duration:r.seconds/60,advanceTime:false,advanceBastionTurn:false},"system.targets":r.actors.map(id=>({actor:game.actors.get(id).uuid}))});
+  if(!r.offlineParticipants&&(r.kind==="short"||r.kind==="long")) await game.messages.get(r.messageId)?.update({"system.data":{type:r.kind,duration:r.seconds/60,advanceTime:false,advanceBastionTurn:false},"system.targets":r.actors.map(id=>({actor:game.actors.get(id).uuid}))});
   await persist(scene,data,r);
 }
 
@@ -235,29 +252,65 @@ async function auxiliary(scene,data,r,actorId) {
   // An auxiliary Roll is persisted before publishing. A lost response can be replayed without a second draw.
   if(["travel","local"].includes(r.kind) && r.phase!=="marchSave"&&!out.success) {
     if(!out.penaltyRoll) { out.penaltyRoll=(await new Roll("1d6").evaluate()).toJSON(); await save(scene,data); }
-    r.penalty=out.penaltyRoll.total*10;
-    r.seconds=r.kind==="local"?Math.ceil(r.baseSeconds*(1+r.penalty/100)):journeySeconds(r.baseSeconds,r.pace,region(data,r.to),r.road,r.profile,r.miles,r.penalty);
+    applyNavigationPenalty(data,r,out.penaltyRoll.total);
   }
   if(r.kind==="forage" && out.success) {
     if(!out.foodRoll) { out.foodRoll=(await new Roll(`1d6 + ${number(actor.system.abilities.wis.mod,"Модификатор Мудрости",-100,100)}`).evaluate()).toJSON(); await save(scene,data); }
     if(!out.waterRoll) { out.waterRoll=(await new Roll(`1d6 + ${actor.system.abilities.wis.mod}`).evaluate()).toJSON(); await save(scene,data); }
-    out.food=Math.max(0,out.foodRoll.total); out.water=Math.max(0,out.waterRoll.total);
-    out.label=`${out.total} — еда: ${out.food} фунт.; вода: ${out.water} галл.`;
+    setForageResult(out,out.foodRoll.total,out.waterRoll.total);
   }
   out.auxDone=true;
+}
+
+function applyNavigationPenalty(data,r,die) {
+  r.penalty=die*10;
+  r.seconds=r.kind==="local"?Math.ceil(r.baseSeconds*(1+r.penalty/100)):journeySeconds(r.baseSeconds,r.pace,region(data,r.to),r.road,r.profile,r.miles,r.penalty);
+}
+
+function setForageResult(out,food,water) {
+  out.food=Math.max(0,food);out.water=Math.max(0,water);
+  out.label=`${out.total} — еда: ${out.food} фунт.; вода: ${out.water} галл.`;
+}
+
+async function recordOffline(scene,data,r,args,user) {
+  gmOnly(user);
+  need(r.offlineParticipants&&data.activeId===r.id&&args.step===(r.step??0),"Офлайн-заявка или её этап изменились. Обновите окно.");
+  const id=args.actorId;
+  validateRequest(r,id,user,r.offlineParticipants.map(p=>p.id));
+  need(needsParticipant(r),"Для безопасного перехода бросок не нужен.");
+  const out={label:"Отдых подтверждён",auxDone:true};
+  if(!["short","long"].includes(r.kind)) {
+    out.total=number(args.total,"Итог броска",-100,1000,true);
+    out.success=out.total>=r.dc;
+    out.label=`${out.total} — ${out.success?"успех":"провал"}`;
+    if(!out.success&&r.phase==="marchSave")out.label+=" · +1 степень истощения на листе персонажа";
+    else if(!out.success&&["travel","local"].includes(r.kind)) {
+      const die=number(args.penaltyDie,"Результат d6",1,6,true);
+      applyNavigationPenalty(data,r,die);
+      out.label+=` · d6: ${die}`;
+    }
+    if(r.kind==="forage") {
+      const day=dayOf(game.time.worldTime);
+      need(!alreadyForaged(data,id,day),"Этот участник уже искал пропитание в эти сутки.");
+      if(out.success)setForageResult(out,number(args.food,"Еда, фунты",-100,1000,true),number(args.water,"Вода, галлоны",-100,1000,true));
+      data.foraged[id]=day;
+    }
+  }
+  r.outcomes[id]=out;
+  await persist(scene,data,r);
 }
 
 
 async function restInJourney(scene,data,r,user) {
   const gm=game.users.get(game.users.activeGM?.id)??user;
-  const id=await createRequest(scene,data,"long",gm,{actors:memberIds(scene)},r);
+  const id=await createRequest(scene,data,"long",gm,{actors:memberIds(scene,data)},r);
   await syncCard(scene,data,r);return id;
 }
 async function finish(scene,data,r,user,recover=false,skipTime=false,skipExhaustion=false,skipLedger=false) {
-  gmOnly(user);need(r.status==="approved"||(recover&&r.status==="committing"),"Эта заявка не готова к завершению.");checkParty(scene);
+  gmOnly(user);need(r.status==="approved"||(recover&&r.status==="committing"),"Эта заявка не готова к завершению.");checkParty(scene,data);
   const moving=["travel","local"].includes(r.kind);
   if(r.commit&&!r.commit.type) {
-    const c=r.commit,before=journey(scene,data),reset=r.kind==="long"&&memberIds(scene).every(id=>r.actors.includes(id));
+    const c=r.commit,before=journey(scene,data),reset=r.kind==="long"&&memberIds(scene,data).every(id=>r.actors.includes(id));
     c.id=uid();c.type=moving?"leg":"action";c.delta=c.timeAfter-c.timeBefore;c.leg={seconds:c.delta,arrive:true};
     c.ledgerBefore=before;c.ledgerAfter={...before,revision:before.revision+1,seconds:reset?0:before.seconds+(moving?c.delta:0),lastOperation:c.id};c.ledgerChange=moving||reset;
     await save(scene,data);
@@ -271,11 +324,11 @@ async function finish(scene,data,r,user,recover=false,skipTime=false,skipExhaust
     if(r.kind==="teleport"){need(state(scene).currentRegionId===r.regionId,"Партия уже находится в другом регионе.");teleportTarget(scene,data,r.to,r.locationId,user);}
     const before=journey(scene,data),checks=moving&&r.phase==="marchSave";
     const leg=moving&&!checks?travelLeg(r.seconds,r.elapsedSeconds??0,before.seconds,!!r.march):{seconds:moving?0:r.seconds,arrive:true};
-    const reset=r.kind==="long"&&memberIds(scene).every(id=>r.actors.includes(id));
+    const reset=r.kind==="long"&&memberIds(scene,data).every(id=>r.actors.includes(id));
     const id=uid(),after={...before,revision:before.revision+1,seconds:reset?0:before.seconds+(moving?leg.seconds:0),lastOperation:id};
     r.commit={id,type:checks?"checks":moving?"leg":"action",delta:leg.seconds,leg,ledgerBefore:before,ledgerAfter:after,ledgerChange:(moving&&leg.seconds>0)||reset,
       timeBefore:game.time.worldTime,timeAfter:game.time.worldTime+leg.seconds,timeDone:false,tokenDone:false};
-    if(checks)r.commit.penalties=Object.fromEntries(r.actors.filter(id=>!r.outcomes[id].success&&!r.outcomes[id].exempt).map(id=>{const actor=game.actors.get(id);const value=Number(actor.system.attributes.exhaustion??0);return [id,{before:value,after:Math.min(value+1,CONFIG.DND5E.conditionTypes?.exhaustion?.levels??6)}];}));
+    if(checks&&!r.offlineParticipants)r.commit.penalties=Object.fromEntries(r.actors.filter(id=>!r.outcomes[id].success&&!r.outcomes[id].exempt).map(id=>{const actor=game.actors.get(id);const value=Number(actor.system.attributes.exhaustion??0);return [id,{before:value,after:Math.min(value+1,CONFIG.DND5E.conditionTypes?.exhaustion?.levels??6)}];}));
     r.status="committing";await persist(scene,data,r);
   }
   const c=r.commit;
@@ -307,7 +360,7 @@ async function finish(scene,data,r,user,recover=false,skipTime=false,skipExhaust
     r.elapsedSeconds=(r.elapsedSeconds??0)+c.delta;r.step=(r.step??0)+1;
     r.stages??=[];r.stages.push({id:c.id,type:c.type,seconds:c.delta,total:journey(scene,data).seconds,dc:r.phase==="marchSave"?r.dc:null,outcomes:clone(r.outcomes)});
     if(!r.navigationDone){r.navigation={actors:clone(r.actors),outcomes:clone(r.outcomes),dc:r.dc};r.navigationDone=true;}
-    if(c.leg.save){r.phase="marchSave";r.dc=c.leg.save;r.actors=memberIds(scene);r.outcomes={};r.running={};assignUsers(scene,r);r.status="approved";}
+    if(c.leg.save){r.phase="marchSave";r.dc=c.leg.save;r.actors=memberIds(scene,data);r.outcomes={};r.running={};assignUsers(scene,r);r.status="approved";}
     else if(!complete){r.phase="travel";r.status=c.type==="checks"||r.march?"approved":"camp";}
   }
   if(complete){r.dayFinal=journey(scene,data).seconds;if(["travel","teleport"].includes(r.kind))region(data,r.to).explored=true;r.status="done";data.activeId=null;}
@@ -336,8 +389,20 @@ export async function processRequest(args,senderId) {
   }
   checkScene(scene);
   const data=privateData(scene);
+  if(args.action==="offlineSettings") {
+    gmOnly(user);
+    const partyId=partyToken(scene)?.actor?.id;
+    need(!active(data)&&(!partyId||!activeElsewhere(scene,partyId)),"Завершите текущую заявку партии.");
+    need(typeof args.enabled==="boolean","Выберите режим партии.");
+    const names=text(args.names??"","Участники",3000).split(/\r?\n/).map(name=>name.trim()).filter(Boolean);
+    const keys=names.map(name=>name.toLowerCase());
+    need(names.length<=30&&names.every(name=>name.length<=80)&&new Set(keys).size===names.length,"Укажите до 30 участников с уникальными именами до 80 символов.");
+    const previous=new Map((data.offline?.roster??[]).map(p=>[p.name.toLowerCase(),p.id]));
+    data.offline={enabled:args.enabled,roster:names.map((name,i)=>({id:previous.get(keys[i])??uid(),name}))};
+    await persist(scene,data);return;
+  }
   if(args.action==="journeySettings") {
-    gmOnly(user);checkParty(scene);need(!active(data),"Завершите текущую заявку.");
+    gmOnly(user);checkParty(scene,data);need(!active(data),"Завершите текущую заявку.");
     need(!activeElsewhere(scene,partyToken(scene).actor.id),"У партии есть незавершённая заявка.");
     const old=journey(scene,data),seconds=args.hours==null?old.seconds:number(args.hours,"Часы в пути",0,10000,true)*3600+number(args.minutes??0,"Минуты",0,59,true)*60;
     data.journeys??={};data.journeys[partyToken(scene).actor.id]={...old,seconds,revision:old.revision+1,profile:args.profile?movementProfile(args.profile):old.profile,lastOperation:uid()};
@@ -354,8 +419,8 @@ export async function processRequest(args,senderId) {
     need(subject,"Локация не найдена.");subject.notes=text(args.notes,"Заметки мастера");await persist(scene,data);return;
   }
   if(args.action==="guide") {
-    checkParty(scene);ownsParty(user,scene);need(!active(data),"Завершите текущую заявку перед сменой проводника.");
-    const id=args.actorId??null;need(id===null||memberIds(scene).includes(id),"Проводник должен входить в состав партии.");
+    checkParty(scene,data);ownsParty(user,scene,data);need(!active(data),"Завершите текущую заявку перед сменой проводника.");
+    const id=args.actorId??null;need(id===null||memberIds(scene,data).includes(id),"Проводник должен входить в состав партии.");
     await publish(scene,data,{guideId:id});return;
   }
   if(args.action==="region") {
@@ -436,7 +501,12 @@ export async function processRequest(args,senderId) {
     const r=region(data,args.regionId);
     if(args.action==="event") {
       const table=game.tables.get(args.tableId); need(table&&r.tables.includes(table.id),"Таблица не привязана к региону.");
-      const roll=await table.draw({displayChat:false}); need(roll.results.length,"Таблица не выдала результат. Проверьте её диапазоны.");
+      const options={displayChat:false};
+      if(data.offline?.enabled) {
+        options.results=table.getResultsForRoll(number(args.total,"Итог броска по таблице",-1e9,1e9,true));
+        need(options.results.length,"Для этого числа нет доступного результата таблицы.");
+      }
+      const roll=await table.draw(options); need(roll.results.length,"Таблица не выдала результат. Проверьте её диапазоны.");
       const id=uid();
       const content=`<div class="mjl-card"><h3>${esc(table.name)}</h3>${roll.results.map(x=>x.description??x.text??"").join("<hr>")}</div>`;
       data.events[id]={content,published:null}; await save(scene,data);
@@ -452,6 +522,7 @@ export async function processRequest(args,senderId) {
     await persist(scene,data); return;
   }
   const r=requestById(data,args.requestId??data.activeId);
+  if(args.action==="recordOffline")return recordOffline(scene,data,r,args,user);
   if(args.action==="approve") return approve(scene,data,r,args,user);
   if(args.action==="reject") {
     gmOnly(user); need(["pending","approved","camp"].includes(r.status)&&r.phase!=="marchSave"&&!Object.values(r.running).some(Boolean)&&(!Object.keys(r.outcomes).length||r.navigationDone),"Уже начатое действие нужно завершить; его результаты не отменяются.");
@@ -460,7 +531,7 @@ export async function processRequest(args,senderId) {
     return persist(scene,data,r);
   }
   if(args.action==="journeyChoice") {
-    ownsParty(user,scene);need(data.activeId===r.id&&["travel","local"].includes(r.kind)&&["pending","approved","camp"].includes(r.status)&&r.phase!=="marchSave","Сейчас нельзя менять решение о продолжении пути.");
+    ownsParty(user,scene,data);need(data.activeId===r.id&&["travel","local"].includes(r.kind)&&["pending","approved","camp"].includes(r.status)&&r.phase!=="marchSave","Сейчас нельзя менять решение о продолжении пути.");
     need(!Object.values(r.running).some(Boolean),"Сначала завершите открытый бросок.");
     if(args.choice==="rest") {
       if(journey(scene,data).seconds>=TRAVEL_LIMIT)return restInJourney(scene,data,r,user);
@@ -472,8 +543,9 @@ export async function processRequest(args,senderId) {
     gmOnly(user);need(data.activeId===r.id&&r.marchRequested&&["approved","camp"].includes(r.status),"Нет заявки на марш.");r.march=true;r.marchRequested=false;r.status="approved";await persist(scene,data,r);return;
   }
   if(args.action==="reserve") {
+    need(!r.offlineParticipants,"Мастер вводит результат броска вручную.");
     const actor=game.actors.get(args.actorId);
-    validateRequest(r,args.actorId,{isGM:user.isGM,owns:actor?.testUserPermission(user,"OWNER")},memberIds(scene));
+    validateRequest(r,args.actorId,{isGM:user.isGM,owns:actor?.testUserPermission(user,"OWNER")},memberIds(scene,data));
     need(user.isGM||!r.assignedUsers?.[args.actorId]||r.assignedUsers[args.actorId]===user.id,"Проверка назначена другому игроку. Обратитесь к мастеру.");
     need(needsParticipant(r),"Для безопасного перехода бросок не нужен.");
     const day=dayOf(game.time.worldTime);
