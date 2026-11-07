@@ -1,4 +1,4 @@
-import {ID, PACE, TERRAIN, ACTIONS, STATUS, TRAVEL_LIMIT, movementProfile, allowedPaces, journeySeconds, durationSeconds, esc, eventTable, secondsLabel, need, unknownExitLabels} from "./rules.mjs";
+import {ID, TITLE, PACE, TERRAIN, ACTIONS, STATUS, TRAVEL_LIMIT, movementProfile, allowedPaces, journeySeconds, durationSeconds, esc, eventTable, secondsLabel, need, unknownExitLabels} from "./rules.mjs";
 import {state, privateData, notesFor, regionDraft, partyToken, partyProfile, participants, participantName, needsParticipant, request, perform} from "./store.mjs";
 import {isBoundary} from "./geometry.mjs";
 import {notebook,showNotebook} from "./journals.mjs";
@@ -36,17 +36,17 @@ function offlineRoll(r,name) {
   });
 }
 export async function prompt(title,content,read,ok="Сохранить",render) {
-  return DialogV2.prompt({classes:["mjl-dialog"],window:{title},position:{width:500},content:`<div class="mjl-dialog-fields">${content}</div>`,rejectClose:false,render,ok:{label:ok,callback:(_event,b)=>read(b.form)}});
+  return DialogV2.prompt({classes:["mjl-brand","mjl-dialog"],window:{title,icon:"fa-solid fa-route"},position:{width:500},content:`<div class="mjl-dialog-fields">${content}</div>`,rejectClose:false,render,ok:{label:ok,callback:(_event,b)=>read(b.form)}});
 }
 function teleportOptions(scene,to,locationId) {
   const regions=game.user.isGM?Object.values(privateData(scene).regions):state(scene).regions.filter(r=>r.explored);
   return regions.filter(r=>r?.center).map(r=>`<optgroup label="${esc(r.name)}">${options(Object.fromEntries([[`${r.id}:`,"Центр региона"],...(r.locations??[]).filter(l=>game.user.isGM||l.revealed!==false).map(l=>[`${r.id}:${l.id}`,l.name])]),`${to}:${locationId??""}`)}</optgroup>`).join("");
 }
 const teleportHint='<p class="mjl-muted">Разыграйте заклинание или предмет по правилам игры. Мастер подтверждает место прибытия.</p>';
-export async function confirm(title,content) { return DialogV2.confirm({classes:["mjl-dialog"],window:{title},content,rejectClose:false,yes:{label:"Подтвердить"},no:{label:"Отмена"}}); }
+export async function confirm(title,content) { return DialogV2.confirm({classes:["mjl-brand","mjl-dialog"],window:{title,icon:"fa-solid fa-route"},content,rejectClose:false,yes:{label:"Подтвердить"},no:{label:"Отмена"}}); }
 export class PointcrawlApp extends ApplicationV2 {
   static instance;
-  static DEFAULT_OPTIONS={id:`${ID}-manager`,classes:["mjl-app"],window:{title:"Pointcrawl · Менеджер мастера",icon:"fa-solid fa-route",resizable:true},position:{width:900,height:"auto"}};
+  static DEFAULT_OPTIONS={id:`${ID}-manager`,classes:["mjl-brand","mjl-app"],window:{title:`${TITLE} · Менеджер мастера`,icon:"fa-solid fa-route",resizable:true},position:{width:900,height:"auto"}};
   tab="regions"; regionId=""; regionSearch=""; requestId=""; pace="normal"; busy=false; dirty=false; importParsed=null; sections=new Map();
   get scene() {return this.sceneId?game.scenes.get(this.sceneId):canvas.scene;}
   get manager() {return this.constructor===PointcrawlApp;}
@@ -385,7 +385,7 @@ export class PointcrawlApp extends ApplicationV2 {
     const scene=this.scene,r=privateData(scene).regions[this.regionId];need(r,"Выберите регион.");
     const old={...(r.locations.find(l=>l.id===id)??{name:"",description:"",notes:"",x:r.center?.x??"",y:r.center?.y??"",dc:"",revealed:false}),...draft,...point};
     const read=f=>({...fdata(f),color:f.querySelector("color-picker").value,revealed:f.elements.revealed.checked,showName:f.elements.showName.checked,remove:!!f.elements.remove?.checked});
-    const value=await DialogV2.prompt({classes:["mjl-dialog","mjl-location-editor"],window:{title:"Локация региона"},position:{width:600},rejectClose:false,
+    const value=await DialogV2.prompt({classes:["mjl-brand","mjl-dialog","mjl-location-editor"],window:{title:"Локация региона",icon:"fa-solid fa-route"},position:{width:600},rejectClose:false,
       content:`<div class="mjl-location-layout">${field("Название локации","name",old.name,"text","required")}
         <section class="mjl-location-point"><div><strong>Положение на карте</strong><p>${old.x===""?"Точка не выбрана":`Точка: ${Math.round(old.x)}, ${Math.round(old.y)}`}</p></div><button type="button" data-location-pick><i class="fa-solid fa-location-dot" aria-hidden="true"></i> Выбрать на карте</button></section>
         <div class="mjl-location-row">${field("Сложность поиска","dc",old.dc??"","number",'min="0" max="100" placeholder="Оставьте пустым, для сложности по умолчанию для региона"')}
@@ -419,13 +419,13 @@ export class PointcrawlApp extends ApplicationV2 {
 
 export class TravelCentre extends PointcrawlApp {
   static instance;
-  static DEFAULT_OPTIONS={id:`${ID}-centre`,classes:["mjl-app","mjl-centre"],window:{title:"Центр путешествий"},position:{height:"auto"}};
+  static DEFAULT_OPTIONS={id:`${ID}-centre`,classes:["mjl-brand","mjl-app","mjl-centre"],window:{title:`${TITLE} · Центр путешествий`},position:{height:"auto"}};
   tab="travel";
 }
 
 export class NotesWindow extends PointcrawlApp {
   static windows=new Map();
-  static DEFAULT_OPTIONS={classes:["mjl-app","mjl-notes"],window:{title:"Заметки",icon:"fa-solid fa-book-open"},position:{width:540,height:"auto"}};
+  static DEFAULT_OPTIONS={classes:["mjl-brand","mjl-app","mjl-notes"],window:{title:`${TITLE} · Заметки`,icon:"fa-solid fa-book-open"},position:{width:540,height:"auto"}};
   tab="players";
   get title() {
     try {return `Заметки · ${notesFor(this.scene,this.regionId,this.locationId).name}`;}
@@ -456,7 +456,7 @@ export class NotesWindow extends PointcrawlApp {
 export class RequestWindow extends PointcrawlApp {
   static windows=new Map();
   static prompted=new Set();
-  static DEFAULT_OPTIONS={classes:["mjl-app","mjl-request"],window:{title:"Заявка партии"},position:{width:560,height:"auto"}};
+  static DEFAULT_OPTIONS={classes:["mjl-brand","mjl-app","mjl-request"],window:{title:`${TITLE} · Заявка партии`},position:{width:560,height:"auto"}};
   static value(scene,id) {
     if(game.user.isGM)return privateData(scene).requests[id];
     return state(scene).active?.id===id?state(scene).active:game.messages.find(m=>m.getFlag(ID,"sceneId")===scene.id&&m.getFlag(ID,"requestId")===id)?.getFlag(ID,"request");
@@ -464,7 +464,7 @@ export class RequestWindow extends PointcrawlApp {
   static open({sceneId=canvas.scene?.id,requestId}={}) {
     const scene=game.scenes.get(sceneId);if(!scene||!requestId)return;
     const key=`${sceneId}:${requestId}`,r=this.value(scene,requestId);
-    const app=this.windows.get(key)??new this({id:`${ID}-request-${requestId}`,window:{title:r?.kind==="travel"?"Pointcrawl · Переход между регионами":`Pointcrawl · ${ACTIONS[r?.kind]??"Заявка партии"}`}});
+    const app=this.windows.get(key)??new this({id:`${ID}-request-${requestId}`,window:{title:`${TITLE} · ${r?.kind==="travel"?"Переход между регионами":ACTIONS[r?.kind]??"Заявка партии"}`}});
     this.windows.set(key,app);app.sceneId=sceneId;app.requestId=requestId;
     app.render({force:true});return app;
   }

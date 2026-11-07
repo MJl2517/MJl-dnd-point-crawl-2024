@@ -1,20 +1,22 @@
-import {ID} from "./rules.mjs";
-import {state,privateData,connectSocket,request} from "./store.mjs";
+import {ID,TITLE} from "./rules.mjs";
+import {state,privateData,connectSocket,request,listNotebooks} from "./store.mjs";
 import {PointcrawlApp,TravelCentre,RequestWindow} from "./app.mjs";
 import {controls,preMove,arrivalBanner,validateGeometry,prepareRegion,redraw,canvasReady,canvasTearDown,useTool} from "./canvas.mjs";
 import {initializePrivate,loadPrivate} from "./private.mjs";
 
 Hooks.once("init",()=>{
-  game.settings.registerMenu(ID,"open",{name:"Pointcrawl · Мастер",label:"Открыть менеджер мастера",hint:"Регионы, маршруты, события и заявки.",icon:"fa-solid fa-map",type:PointcrawlApp,restricted:true});
-  game.settings.registerMenu(ID,"centre",{name:"Pointcrawl · Партия",label:"Открыть центр путешествий",hint:"Действия партии и известные регионы.",icon:"fa-solid fa-campground",type:TravelCentre,restricted:false});
+  game.settings.registerMenu(ID,"open",{name:`${TITLE} · Мастер`,label:"Открыть менеджер мастера",hint:"Регионы, маршруты, события и заявки.",icon:"fa-solid fa-map",type:PointcrawlApp,restricted:true});
+  game.settings.registerMenu(ID,"centre",{name:`${TITLE} · Партия`,label:"Открыть центр путешествий",hint:"Действия партии и известные регионы.",icon:"fa-solid fa-campground",type:TravelCentre,restricted:false});
 });
 Hooks.once("socketlib.ready",connectSocket);
 Hooks.once("ready",async()=>{
   if(game.modules.get("socketlib")?.active)connectSocket();
-  game.modules.get(ID).api={open:()=>game.user.isGM?PointcrawlApp.open():TravelCentre.open()};
+  const api=Object.freeze({version:1,open:options=>(game.user.isGM?PointcrawlApp:TravelCentre).open(options),listNotebooks});
+  game.modules.get(ID).api=api;
   if(game.user.isGM) {try{await initializePrivate(game.users.activeGM?.isSelf);if(game.users.activeGM?.isSelf)for(const scene of game.scenes.filter(s=>state(s).enabled))await request("syncJournals",{},scene);ui.journal.render();refresh();}catch(e){ui.notifications.error(`Pointcrawl: ${e.message}`);}}
   if(game.user.isGM&&canvas.scene&&state(canvas.scene).active?.status==="committing")ui.notifications.warn("Pointcrawl: незавершённое действие. Откройте центр путешествий для восстановления.",{permanent:true});
   refresh();
+  Hooks.callAll(`${ID}.apiReady`,api);
 });
 Hooks.on("getSceneControlButtons",controls);
 Hooks.on("preMoveToken",preMove);

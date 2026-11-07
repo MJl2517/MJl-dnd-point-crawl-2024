@@ -72,7 +72,7 @@ globalThis.Hooks={callAll(){}};
 globalThis.CONFIG={DND5E:{restTypes:{short:{duration:{normal:60}},long:{duration:{normal:480}}}}};
 globalThis.ChatMessage={async create(value){const id=`message${++serial}`;const m={id,...value,async update(changes){Object.assign(this,changes);if(changes.flags?.[ID]?.request)this[`flags.${ID}.request`]=structuredClone(changes.flags[ID].request);}};messages.set(id,m);return m;}};
 globalThis.Roll=class {constructor(formula){this.formula=formula;}async evaluate(){this.total=this.formula.includes("-10")?-9:6;return this;}toJSON(){return {formula:this.formula,total:this.total};}};
-const {processRequest,publish,notesFor}=await import("../scripts/store.mjs");
+const {processRequest,publish,notesFor,listNotebooks}=await import("../scripts/store.mjs");
 (await import("../scripts/private.mjs")).privateEntries.set(scene.id,entry);
 flags.state={enabled:true,tokenId:"token",currentRegionId:"one",regions:[],routes:[]};await publish(scene,data);
 eq(JSON.stringify(flags.state).includes("SECRET"),false);eq(JSON.stringify(journalDocs).includes("SECRET"),false);
@@ -162,7 +162,14 @@ eq(notesFor(scene,"two"),{name:data.regions.two.name,description:"Описани
 eq(notesFor(scene,"two","known"),{name:"Родник",description:"Описание локации"});
 eq(Object.hasOwn(notesFor(scene,"two"),"notes"),false);
 bad(()=>notesFor(scene,"two","secret"),/недоступны/);bad(()=>notesFor(scene,"unexplored"),/недоступны/);bad(()=>notesFor(scene,"missing"),/недоступны/);
+const playerNotebooks=listNotebooks({sceneId:scene.id});
+eq(playerNotebooks.some(n=>n.locationId==="known"&&n.published),true);
+eq(playerNotebooks.some(n=>n.locationId==="secret"||n.regionId==="unexplored"),false);
+eq(JSON.stringify(playerNotebooks).includes("SECRET"),false);
+eq(listNotebooks({sceneId:"missing"}),[]);
 game.user=users.get("gm");eq(notesFor(scene,"two").notes,"SECRET_REGION_NOTES");eq(notesFor(scene,"two","known").notes,"SECRET_LOCATION_NOTES");eq(notesFor(scene,"two","secret").name,"SECRET_LOCATION");eq(notesFor(scene,"unexplored").notes,"SECRET_CLOSED");
+eq(listNotebooks().find(n=>n.locationId==="secret")?.label,"SECRET_LOCATION");
+eq(listNotebooks().find(n=>n.locationId==="secret")?.published,false);
 
 for(const [pace,seconds] of [["slow",5400],["normal",3600],["fast",2700]])eq(travelSeconds(3600,pace,TERRAIN.grassland,0,true),seconds);
 eq(travelSeconds(3600,"slow",TERRAIN.mountains,0,true),5400);eq(travelSeconds(3600,"normal",TERRAIN.mountains,0,true),3600);

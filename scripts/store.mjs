@@ -49,6 +49,32 @@ export function notesFor(scene,regionId,locationId) {
   need(subject,"Заметки этой локации недоступны.");
   return {name:subject.name,description:subject.description??"",...(gm?{notes:subject.notes??""}:{})};
 }
+export function listNotebooks({sceneId}={}) {
+  const gm=game.user?.isGM===true;
+  const byScene=new Map();
+  const result=[];
+  for(const doc of game.journal){
+    const link=doc.getFlag(ID,"notebook");
+    if(!link||link.archived||sceneId&&link.sceneId!==sceneId)continue;
+    const scene=game.scenes.get(link.sceneId);
+    if(!scene||!state(scene).enabled)continue;
+    if(!byScene.has(scene.id)){
+      const publicRegions=new Map(state(scene).regions.filter(r=>r.explored).map(r=>[r.id,r]));
+      byScene.set(scene.id,{publicRegions,privateRegions:gm?privateData(scene).regions:{}});
+    }
+    const {publicRegions,privateRegions}=byScene.get(scene.id);
+    const publicRegion=publicRegions.get(link.regionId);
+    const publicSubject=link.locationId?publicRegion?.locations?.find(l=>l.id===link.locationId):publicRegion;
+    const published=!!publicSubject&&doc.ownership.default>=2;
+    if(!gm&&(!published||!doc.testUserPermission(game.user,"OBSERVER")))continue;
+    const region=privateRegions[link.regionId]??publicRegion;
+    const location=link.locationId?region?.locations?.find(l=>l.id===link.locationId):null;
+    if(!region||link.locationId&&!location)continue;
+    result.push({uuid:doc.uuid,sceneId:scene.id,regionId:link.regionId,locationId:link.locationId??null,
+      name:location?`${region.name} — ${location.name}`:region.name,label:location?.name??region.name,published});
+  }
+  return result.sort((a,b)=>a.name.localeCompare(b.name,"ru"));
+}
 const uid = () => foundry.utils.randomID();
 async function save(scene,data) {
   const doc=journal(scene);

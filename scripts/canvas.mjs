@@ -1,4 +1,4 @@
-import {ID, need, secondsLabel, unknownExitLabels} from "./rules.mjs";
+import {ID, TITLE, need, secondsLabel, unknownExitLabels} from "./rules.mjs";
 import {state,privateData,partyToken,participants,regionAt,request} from "./store.mjs";
 import {PointcrawlApp,TravelCentre,RequestWindow} from "./app.mjs";
 import {fitRegion,shapeTree,subtractPaths,drawTree} from "./geometry.mjs";
@@ -222,7 +222,7 @@ export function controls(controls) {
   const original=controls.regions;if(!original)return;
   const gm=game.user.isGM;
   const tool=(name,title,icon,order,extra={})=>({name,title,icon,order,...extra});
-  controls[ID]={name:ID,title:"Pointcrawl — путешествия",icon:"fa-solid fa-route",order:8,layer:gm?"regions":"tokens",visible:true,
+  controls[ID]={name:ID,title:TITLE,icon:"fa-solid fa-route",order:8,layer:gm?"regions":"tokens",visible:true,
     onChange:(_event,enabled)=>{
       // Players use our markers on the token layer; native region editing and its palette are GM tools.
       if(!gm) {

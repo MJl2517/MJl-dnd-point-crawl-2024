@@ -1,4 +1,4 @@
-.mjl-app,.mjl-dialog{--pc-accent:#9dbbe8;--pc-line:rgba(139,151,170,.24);--pc-panel:rgba(127,139,155,.055);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:13px;line-height:1.45;max-width:calc(100vw - 32px);max-height:calc(100vh - 32px)}
+.mjl-app,.mjl-dialog{--pc-accent:var(--mjl-accent);--pc-line:var(--mjl-border);--pc-panel:var(--mjl-surface);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:13px;line-height:1.45;max-width:calc(100vw - 32px);max-height:calc(100vh - 32px)}
 .mjl-app{min-width:360px;min-height:0}
 .mjl-app .window-title,.mjl-dialog .window-title{font-family:inherit;font-size:14px;font-weight:600}
 .mjl-app :is(h2,h3,h4),.mjl-dialog :is(h2,h3,h4){font-family:inherit;line-height:1.35;border:0}
@@ -10,20 +10,20 @@
 .mjl-request .mjl-main,.mjl-notes .mjl-main{max-height:calc(100vh - 120px)}
 .mjl-tabs{display:flex;gap:4px;padding:8px 12px;border-bottom:1px solid var(--pc-line);flex-shrink:0}
 .mjl-tabs button{flex:1;border-color:transparent;background:transparent}
-.mjl-app .mjl-tabs button.active{border-color:var(--pc-line);color:var(--pc-accent);background:rgba(120,155,212,.1)}
+.mjl-app .mjl-tabs button.active{border-color:var(--pc-line);color:var(--pc-accent);background:var(--mjl-hover)}
 .mjl-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start;gap:16px}
 .mjl-panel{border:1px solid var(--pc-line);border-radius:8px;padding:14px;margin-bottom:14px;background:var(--pc-panel);min-width:0}
 .mjl-panel:last-child{margin-bottom:0}
 .mjl-section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
 .mjl-section-heading :is(h2,h3,h4){margin:0}
 .mjl-app label,.mjl-dialog-fields label{display:flex;flex-direction:column;gap:6px;margin:0 0 12px;font-size:12px;font-weight:500}
-.mjl-app :is(input:not([type=checkbox]):not([type=radio]),select,textarea),.mjl-dialog :is(input:not([type=checkbox]):not([type=radio]),select,textarea){width:100%;min-width:0;max-width:100%;box-sizing:border-box;font:inherit;color:inherit;background:rgba(127,139,155,.09);border:1px solid var(--pc-line);border-radius:5px}
+.mjl-app :is(input:not([type=checkbox]):not([type=radio]),select,textarea),.mjl-dialog :is(input:not([type=checkbox]):not([type=radio]),select,textarea){width:100%;min-width:0;max-width:100%;box-sizing:border-box;font:inherit;color:inherit;background:var(--mjl-surface);border:1px solid var(--pc-line);border-radius:5px}
 .mjl-app :is(input,select),.mjl-dialog :is(input:not([type=checkbox]):not([type=radio]),select){min-height:32px}
 .mjl-app textarea,.mjl-dialog textarea{display:block;min-height:88px;resize:vertical;padding:8px;line-height:1.5}
-.mjl-app :is(input,select,textarea):focus,.mjl-dialog :is(input,select,textarea):focus{outline:2px solid rgba(125,165,228,.5);outline-offset:1px}
+.mjl-app :is(input,select,textarea):focus,.mjl-dialog :is(input,select,textarea):focus{outline:2px solid var(--mjl-accent);outline-offset:1px}
 .mjl-app .mjl-shell button,.mjl-dialog .dialog-content button,.mjl-dialog .form-footer button{min-height:32px;height:auto;white-space:normal;font:inherit;border:1px solid var(--pc-line);border-radius:5px;background:transparent;color:inherit;padding:5px 10px;box-shadow:none}
-.mjl-app .mjl-shell button:hover:not(:disabled),.mjl-dialog .dialog-content button:hover:not(:disabled),.mjl-dialog .form-footer button:hover:not(:disabled){background:rgba(127,139,155,.13);border-color:rgba(139,151,170,.5)}
-.mjl-app button.mjl-primary,.mjl-dialog button[data-action=ok],.mjl-dialog button[data-action=yes]{background:rgba(120,155,212,.13);border-color:rgba(125,165,228,.48);color:var(--pc-accent)}
+.mjl-app .mjl-shell button:hover:not(:disabled),.mjl-dialog .dialog-content button:hover:not(:disabled),.mjl-dialog .form-footer button:hover:not(:disabled){background:var(--mjl-hover);border-color:var(--mjl-accent)}
+.mjl-app button.mjl-primary,.mjl-dialog button[data-action=ok],.mjl-dialog button[data-action=yes]{background:var(--mjl-hover);border-color:var(--mjl-accent);color:var(--pc-accent)}
 .mjl-app button.mjl-danger:hover{color:var(--color-level-error,#e88d81);border-color:currentColor}
 .mjl-check{display:flex!important;flex-direction:row!important;align-items:center;gap:8px!important;font-weight:400!important}
 .mjl-check :is(input[type=checkbox],input[type=radio]){flex:0 0 auto;width:18px!important;min-height:18px;margin:0}
@@ -44,7 +44,7 @@
 .mjl-muted{font-size:12px;line-height:1.5;color:var(--color-text-secondary)}.mjl-error{color:var(--color-level-error,#e88d81);overflow-wrap:anywhere}
 .mjl-manager{display:grid;grid-template-columns:190px minmax(0,1fr);gap:16px;align-items:start}.mjl-manager aside{min-width:0}
 .mjl-wide{width:100%}.mjl-region-list{display:flex;flex-direction:column;gap:4px;margin-top:10px}.mjl-region-list button{text-align:left;padding:8px 10px}
-.mjl-app .mjl-region-list button.active{background:rgba(120,155,212,.1);border-color:rgba(125,165,228,.5);color:var(--pc-accent)}
+.mjl-app .mjl-region-list button.active{background:var(--mjl-hover);border-color:var(--mjl-accent);color:var(--pc-accent)}
 .mjl-form-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 12px}
 .mjl-fold{border-bottom:1px solid var(--pc-line)}.mjl-fold>summary{display:flex;align-items:center;gap:8px;padding:12px 0;cursor:pointer;font-weight:600;list-style:none}
 .mjl-fold>summary::-webkit-details-marker{display:none}.mjl-fold>summary::before{content:"›";display:inline-block;flex:0 0 10px;font-size:18px;line-height:1;transition:transform .12s}.mjl-fold[open]>summary::before{transform:rotate(90deg)}

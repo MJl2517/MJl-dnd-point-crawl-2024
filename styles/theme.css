@@ -1,0 +1,36 @@
+.mjl-brand {
+  --mjl-paper:#f7ecdf;
+  --mjl-muted:#d4bfc9;
+  --mjl-bg:#211c29;
+  --mjl-surface:#32283b;
+  --mjl-border:#594356;
+  --mjl-accent:#f497ad;
+  --mjl-hover:#463047;
+  --mjl-radius:8px;
+  --color-text-primary:var(--mjl-paper);
+  --color-text-secondary:var(--mjl-muted);
+  --color-scheme:dark;
+  color:var(--mjl-paper);
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+.mjl-brand .window-header {
+  background:var(--mjl-surface);
+  border-bottom:1px solid var(--mjl-border);
+  color:var(--mjl-paper);
+}
+.mjl-brand .window-icon {
+  background:center/contain no-repeat url("../art/raspberry.svg");
+  width:20px;
+  height:20px;
+  flex:none;
+}
+.mjl-brand .window-icon::before { content:none; }
+.mjl-brand .window-content { background:var(--mjl-bg); color:var(--mjl-paper); }
+.mjl-brand :is(h2,h3,h4,button,input,select,textarea,.window-title) { font-family:inherit; }
+.mjl-brand :is(h2,h3,h4) { color:var(--mjl-paper); }
+.mjl-brand :is(a,summary) { color:var(--mjl-paper); }
+.mjl-brand :is(a,button,input,select,textarea,summary):focus-visible {
+  outline:2px solid var(--mjl-accent);
+  outline-offset:2px;
+}
