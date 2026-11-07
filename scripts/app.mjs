@@ -1,5 +1,5 @@
 import {ID, TITLE, PACE, TERRAIN, ACTIONS, STATUS, TRAVEL_LIMIT, movementProfile, allowedPaces, journeySeconds, durationSeconds, esc, eventTable, secondsLabel, need, unknownExitLabels} from "./rules.mjs";
-import {state, privateData, notesFor, regionDraft, partyToken, partyProfile, participants, participantName, needsParticipant, request, perform} from "./store.mjs";
+import {state, privateData, notesFor, artFor, chronicleApi, regionDraft, partyToken, partyProfile, participants, participantName, needsParticipant, request, perform} from "./store.mjs";
 import {isBoundary} from "./geometry.mjs";
 import {notebook,showNotebook} from "./journals.mjs";
 
@@ -37,6 +37,10 @@ function offlineRoll(r,name) {
 }
 export async function prompt(title,content,read,ok="Сохранить",render) {
   return DialogV2.prompt({classes:["mjl-brand","mjl-dialog"],window:{title,icon:"fa-solid fa-route"},position:{width:500},content:`<div class="mjl-dialog-fields">${content}</div>`,rejectClose:false,render,ok:{label:ok,callback:(_event,b)=>read(b.form)}});
+}
+export function showPlaceArt(art){
+  if(!art?.src)return ui.notifications.warn("Арт этого места пока недоступен.");
+  new foundry.applications.apps.ImagePopout({src:art.src,window:{title:art.name}}).render({force:true});
 }
 function teleportOptions(scene,to,locationId) {
   const regions=game.user.isGM?Object.values(privateData(scene).regions):state(scene).regions.filter(r=>r.explored);
@@ -94,7 +98,7 @@ export class PointcrawlApp extends ApplicationV2 {
       if(b) {
         event.preventDefault();
         const action=b.dataset.pcAction;
-        this.run(()=>this.action(action,b),!["previewImport","focusExit"].includes(action));
+        this.run(()=>this.action(action,b),!["previewImport","focusExit","placeArt","viewArt"].includes(action));
       }
     });
     root.addEventListener("submit",event=>{event.preventDefault(); this.run(()=>this.submit(event.target));});
@@ -141,6 +145,9 @@ export class PointcrawlApp extends ApplicationV2 {
   }
   noteButton(regionId,locationId) {
     return button("notes","Заметки",`data-region="${regionId}" ${locationId?`data-location="${locationId}"`:""}`);
+  }
+  artButton(regionId,locationId){
+    return artFor(this.scene,regionId,locationId)?.src?button("viewArt","Показать арт",`data-region="${regionId}" ${locationId?`data-location="${locationId}"`:""}`):"";
   }
   journeySettings(scene) {
     const day=state(scene).journey??{seconds:0},p=day.profile??movementProfile();
@@ -243,17 +250,17 @@ export class PointcrawlApp extends ApplicationV2 {
     if(!rows.some(r=>r.id===this.regionId))this.regionId=rows[0]?.id??"";
     const doc=scene.regions.get(this.regionId),r=gm?(data.regions[this.regionId]??(doc?regionDraft(doc):null)):rows.find(r=>r.id===this.regionId);
     const list=rows.map(r=>`<div data-region-search="${esc(r.name)}">${button("region",esc(r.name),`data-id="${r.id}" class="${r.id===this.regionId?"active":""}"`)}${(r.locations??[]).map(l=>`<div data-location-search="${esc(l.name)}" hidden>${button("notes",esc(l.name),`data-region="${r.id}" data-location="${l.id}"`)}</div>`).join("")}</div>`).join("");
-    const body=gm?(r?this.regionForm(r):'<div class="mjl-empty">Нарисуйте первый регион.</div>'):(r?`<div class="mjl-section-heading"><h2>${esc(r.name)}</h2>${this.noteButton(r.id)}</div>${r.locations?.map(l=>`<div class="mjl-row"><strong>${esc(l.name)}</strong>${this.noteButton(r.id,l.id)}</div>`).join("")??""}`:"Выберите регион.");
+    const body=gm?(r?this.regionForm(r):'<div class="mjl-empty">Нарисуйте первый регион.</div>'):(r?`<div class="mjl-section-heading"><h2>${esc(r.name)}</h2><div class="mjl-row-actions">${this.artButton(r.id)}${this.noteButton(r.id)}</div></div>${r.locations?.map(l=>`<div class="mjl-row"><strong>${esc(l.name)}</strong><div class="mjl-row-actions">${this.artButton(r.id,l.id)}${this.noteButton(r.id,l.id)}</div></div>`).join("")??""}`:"Выберите регион.");
     return `<div class="mjl-manager"><aside>${gm?button("draw","Новый регион",'class="mjl-wide"'):""}<label>Поиск<input type="search" name="regionSearch" value="${esc(this.regionSearch)}" placeholder="Регион или локация" autocomplete="off"></label><div class="mjl-region-list">${list}</div><p class="mjl-muted" data-search-empty hidden>Ничего не найдено.</p></aside><section class="mjl-panel">${body}</section></div>`;
   }
   regionForm(r) {
     const terrain=`<div class="mjl-form-grid"><label>Местность<select name="terrain">${options(TERRAIN,r.terrain)}</select></label><label>Максимальный темп<select name="maxPace">${options(PACE,r.maxPace)}</select></label>${field("Сл. навигации","navigationDC",r.navigationDC,"number",'min="0" max="100"')}${field("Сл. поиска","searchDC",r.searchDC,"number",'min="0" max="100"')}${field("Сл. пропитания","forageDC",r.forageDC,"number",'min="0" max="100"')}${field("Обнаружение, футы","detection",r.detection)}</div><label class="mjl-check"><input type="checkbox" name="equipped" ${checked(r.equipped)}>Снаряжение для быстрого темпа в арктике</label>`;
     const color=this.scene.regions.get(r.id)?.color?.css;
     const map=`<label>Цвет региона<color-picker name="color" value="${esc(color)}"></color-picker></label><label class="mjl-check"><input type="checkbox" name="explored" ${checked(r.explored)}>Регион открыт игрокам</label><label class="mjl-check"><input type="checkbox" name="showName" ${checked(r.showName!==false)}>Название центра на карте</label><div class="mjl-grid-buttons">${button("center",r.center?"Переместить центр":"Поставить центр",`data-id="${r.id}"`)}${button("editBoundary","Изменить границу",`data-id="${r.id}"`)}</div><div class="mjl-grid-buttons">${button("reposition","Переставить группу сюда",`data-id="${r.id}"`)}${button("preview","Вид игроков")}</div><p class="mjl-muted">Пересечения обрезаются по соседним регионам. Центр и локации должны оставаться внутри границы.</p>`;
-    const locations=`${r.locations.map(l=>`<div class="mjl-row"><div><strong>${esc(l.name)}</strong><small>${l.revealed?"Открыта игрокам":"Скрыта"} · Сл. ${l.dc??r.searchDC}</small></div>${button("location","Изменить",`data-id="${l.id}"`)}</div>`).join("")}<div class="mjl-actions">${button("location","Добавить локацию")}</div>`;
+    const locations=`${r.locations.map(l=>`<div class="mjl-row"><div><strong>${esc(l.name)}</strong><small>${l.revealed?"Открыта игрокам":"Скрыта"} · Сл. ${l.dc??r.searchDC}</small></div><div class="mjl-row-actions">${button("placeArt","Арт",`data-location="${l.id}"`)}${button("location","Изменить",`data-id="${l.id}"`)}</div></div>`).join("")}<div class="mjl-actions">${button("location","Добавить локацию")}</div>`;
     return `<form data-form="region" data-id="${r.id}" class="mjl-region-form">${field("Название региона","name",r.name,"text",'maxlength="200" required')}
       ${this.fold("terrain",`Местность и проверки <small>${esc(TERRAIN[r.terrain]?.name??"")}</small>`,terrain)}
-      ${this.fold("description","Описание для игроков",`${area("Краткое описание","description",r.description)}<p class="mjl-muted">При открытии места исходное описание переносится в журнал. Дальнейшие записи редактируются в журнале Foundry.</p>${notebook(this.scene,r.id)?this.noteButton(r.id):""}`)}
+      ${this.fold("description","Описание и арт для игроков",`${area("Краткое описание","description",r.description)}<p class="mjl-muted">При открытии места исходное описание переносится в журнал. Дальнейшие записи редактируются в журнале Foundry.</p><div class="mjl-actions">${notebook(this.scene,r.id)?this.noteButton(r.id):""}${button("placeArt","Арт региона")}</div>`)}
       ${this.fold("notes","Заметки мастера",area("Секретные сведения","notes",r.notes))}
       ${this.fold("map",`Карта и видимость${!r.center?" · центр не установлен":""}`,map,!r.center)}
       ${this.fold("locations",`Локации (${r.locations.length})`,locations)}
@@ -297,6 +304,23 @@ export class PointcrawlApp extends ApplicationV2 {
     if(action==="disable") {if(await confirm("Отключить Pointcrawl?","<p>Маска исчезнет. Исходная настройка Token Vision будет восстановлена.</p>"))await request("enable",{enabled:false});return;}
     if(action==="region") {this.regionId=b.dataset.id;this.resetScroll=true;return;}
     if(action==="notes")return NotesWindow.open({sceneId:scene.id,regionId:b.dataset.region,locationId:b.dataset.location});
+    if(action==="viewArt")return showPlaceArt(artFor(scene,b.dataset.region,b.dataset.location));
+    if(action==="placeArt"){
+      const regionId=this.regionId,locationId=b.dataset.location,art=artFor(scene,regionId,locationId);
+      need(art,"Сначала сохраните место.");
+      const hint=chronicleApi()?.setPointcrawlArt
+        ?"Первое изображение в связанной карточке Хроники обновится в обоих модулях. Если карточки ещё нет, она будет создана."
+        :"Изображение сохранится в Pointcrawl. Игроки смогут открыть его после раскрытия места.";
+      const src=await prompt(`Арт · ${art.name}`,`<p class="mjl-muted">${hint}</p>${field("Путь или ссылка на изображение","src",art.src,"text",'maxlength="2048" required')}<div class="mjl-actions">${art.src?'<button type="button" data-art-preview>Текущий арт</button>':""}<button type="button" data-art-picker><i class="fa-solid fa-folder-open"></i> Выбрать файл</button></div>`,form=>form.elements.src.value,"Сохранить арт",(_event,dialog)=>{
+        const input=dialog.element.querySelector('[name="src"]');
+        dialog.element.querySelector("[data-art-preview]")?.addEventListener("click",()=>showPlaceArt(art));
+        dialog.element.querySelector("[data-art-picker]").addEventListener("click",()=>{
+          new foundry.applications.apps.FilePicker.implementation({type:"image",current:input.value,callback:path=>{input.value=path;}}).render(true);
+        });
+      });
+      if(src)await request("placeArt",{regionId,locationId,src},scene);
+      return;
+    }
     if(action==="openNotebook")return showNotebook(scene,this.regionId,this.locationId);
     if(action==="request") {RequestWindow.open({sceneId:scene.id,requestId:b.dataset.id});return;}
     if(action==="centre") {TravelCentre.open();return;}

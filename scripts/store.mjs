@@ -49,6 +49,19 @@ export function notesFor(scene,regionId,locationId) {
   need(subject,"Заметки этой локации недоступны.");
   return {name:subject.name,description:subject.description??"",...(gm?{notes:subject.notes??""}:{})};
 }
+export function chronicleApi(){
+  const module=game.modules.get("mjl-campaign-journal");
+  return module?.active?module.api:null;
+}
+export function artFor(scene,regionId,locationId){
+  if(!scene||!state(scene).enabled)return null;
+  const r=game.user.isGM?privateData(scene).regions[regionId]:state(scene).regions.find(r=>r.id===regionId&&r.explored);
+  const subject=locationId?r?.locations.find(l=>l.id===locationId):r;
+  if(!subject)return null;
+  const doc=notebook(scene,regionId,locationId);
+  const shared=doc&&chronicleApi()?.pointcrawlArt?.(doc.uuid);
+  return {name:subject.name,src:shared?.src??subject.art??""};
+}
 export function listNotebooks({sceneId}={}) {
   const gm=game.user?.isGM===true;
   const byScene=new Map();
@@ -143,7 +156,8 @@ export async function publish(scene,data,extra={}) {
   const old=state(scene);
   const currentId=Object.hasOwn(extra,"currentRegionId")?extra.currentRegionId:old.currentRegionId;
   const regions=Object.values(data.regions).filter(Boolean).map(r=>({id:r.id,center:r.center,showName:r.showName!==false,explored:r.explored,
-    ...(r.explored?{name:r.name,terrain:r.terrain,description:r.description,locations:r.locations.filter(l=>l.revealed).map(l=>({id:l.id,name:l.name,showName:l.showName!==false,description:l.description,x:l.x,y:l.y,color:l.color??null}))}:{})}));
+    ...(r.explored?{name:r.name,terrain:r.terrain,description:r.description,...(r.art?{art:r.art}:{}),
+      locations:r.locations.filter(l=>l.revealed).map(l=>({id:l.id,name:l.name,showName:l.showName!==false,description:l.description,x:l.x,y:l.y,color:l.color??null,...(l.art?{art:l.art}:{})}))}:{})}));
   const routes=data.routes.filter(r=>r.from===currentId||r.to===currentId||(data.regions[r.from]?.explored&&data.regions[r.to]?.explored)).map(r=>{
     const to=r.from===currentId?r.to:r.from;
     const profile=partyProfile(scene,data),paces=allowedPaces(data.regions[to],!!r.road,profile),pace=paces.includes("normal")?"normal":paces.at(-1);
@@ -446,6 +460,22 @@ export async function processRequest(args,senderId) {
     gmOnly(user);const r=region(data,args.regionId),subject=args.locationId?r.locations.find(l=>l.id===args.locationId):r;
     need(subject,"Локация не найдена.");subject.notes=text(args.notes,"Заметки мастера");await persist(scene,data);return;
   }
+  if(args.action==="placeArt"){
+    gmOnly(user);
+    const r=region(data,args.regionId),subject=args.locationId?r.locations.find(l=>l.id===args.locationId):r;
+    need(subject,"Локация не найдена.");
+    const src=text(args.src,"Арт",2048).trim();
+    need(src&&!/[<>\x00-\x1f]/.test(src)&&(!/^[a-z][a-z\d+.-]*:/i.test(src)||/^https?:\/\//i.test(src)),"Выберите изображение или укажите путь Foundry либо ссылку http(s).");
+    const api=chronicleApi();
+    if(api?.setPointcrawlArt){
+      let doc=notebook(scene,r.id,args.locationId);
+      if(!doc){await syncJournals(scene,data);doc=notebook(scene,r.id,args.locationId);}
+      need(doc,"Журнал Pointcrawl недоступен.");
+      return api.setPointcrawlArt({notebookUuid:doc.uuid,name:subject.name,src});
+    }
+    subject.art=src;
+    await persist(scene,data);return;
+  }
   if(args.action==="guide") {
     checkParty(scene,data);ownsParty(user,scene,data);need(!active(data),"Завершите текущую заявку перед сменой проводника.");
     const id=args.actorId??null;need(id===null||memberIds(scene,data).includes(id),"Проводник должен входить в состав партии.");
@@ -453,7 +483,7 @@ export async function processRequest(args,senderId) {
   }
   if(args.action==="region") {
     gmOnly(user); const doc=scene.regions.get(args.regionId); need(doc,"Сначала нарисуйте границу.");
-    const old=data.regions[doc.id], {color,...values}=args.values??{};
+    const old=data.regions[doc.id], {color,art:_art,...values}=args.values??{};
     need(color===undefined||color===""||typeof color==="string"&&/^#[0-9a-f]{6}$/i.test(color),"Укажите цвет региона в формате #RRGGBB.");
     const terrain=values.terrain??old?.terrain??"forest"; need(TERRAIN[terrain],"Неизвестная местность.");
     const r={...(old??regionDraft(doc,terrain)),...values,terrain};
@@ -483,7 +513,8 @@ export async function processRequest(args,senderId) {
       const color=value.color===undefined?r.locations[i]?.color??null:value.color===""?null:value.color;
       need(color===null||typeof color==="string"&&/^#[0-9a-f]{6}$/i.test(color),"Укажите цвет в формате #RRGGBB или оставьте поле пустым.");
       const l={id:args.locationId??uid(),name:text(value.name,"Название",200).trim(),description:text(value.description??"","Описание"),notes:text(value.notes??"","Секреты"),color:color?.toLowerCase()??null,
-        x:number(value.x,"X",-1e7),y:number(value.y,"Y",-1e7),dc:value.dc===""||value.dc==null?null:number(value.dc,"Сл. поиска",0,100,true),revealed:!!value.revealed,showName:value.showName!==false};
+        x:number(value.x,"X",-1e7),y:number(value.y,"Y",-1e7),dc:value.dc===""||value.dc==null?null:number(value.dc,"Сл. поиска",0,100,true),revealed:!!value.revealed,showName:value.showName!==false,
+        ...(r.locations[i]?.art?{art:r.locations[i].art}:{})};
       need(l.name,"Укажите название локации."); need(scene.regions.get(r.id).polygonTree.testPoint(l),"Локация должна находиться внутри региона.");
       if(i<0) r.locations.push(l); else r.locations[i]=l;
     }

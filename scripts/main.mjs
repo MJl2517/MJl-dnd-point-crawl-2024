@@ -1,6 +1,6 @@
 import {ID,TITLE} from "./rules.mjs";
-import {state,privateData,connectSocket,request,listNotebooks} from "./store.mjs";
-import {PointcrawlApp,TravelCentre,RequestWindow} from "./app.mjs";
+import {state,privateData,connectSocket,request,listNotebooks,artFor} from "./store.mjs";
+import {PointcrawlApp,TravelCentre,RequestWindow,showPlaceArt} from "./app.mjs";
 import {controls,preMove,arrivalBanner,validateGeometry,prepareRegion,redraw,canvasReady,canvasTearDown,useTool} from "./canvas.mjs";
 import {initializePrivate,loadPrivate} from "./private.mjs";
 
@@ -105,6 +105,12 @@ Hooks.on("updateToken",(token,changes,_options,userId)=>{
   if(foundry.utils.getProperty(changes,`flags.${ID}.party`)===false&&state(token.parent).tokenId===token.id)
     request("unparty",{},token.parent).catch(e=>ui.notifications.error(`Pointcrawl: ${e.message}`));
 });
+function arrivalArt(message){
+  const r=message.getFlag(ID,"request"),sceneId=message.getFlag(ID,"sceneId");
+  if(!message.author?.isGM||message.isContentVisible===false||r?.status!=="done"||r.sceneId!==sceneId||
+    r.id!==message.getFlag(ID,"requestId")||!["travel","local","teleport"].includes(r.kind))return null;
+  return artFor(game.scenes.get(sceneId),r.to??r.regionId,r.locationId);
+}
 // dnd5e replaces request-card contents after Foundry's renderChatMessageHTML hook.
 Hooks.on("dnd5e.renderChatMessage",(message,html)=>{
   // This particular video is inserted by theripper93 welcome cards. Preserve the card without auto-loading an external iframe.
@@ -119,6 +125,15 @@ Hooks.on("dnd5e.renderChatMessage",(message,html)=>{
       const sceneId=message.getFlag(ID,"sceneId");
       RequestWindow.open({sceneId,requestId:flag});
     });
+    const card=html.querySelector(".mjl-card");
+    if(card&&arrivalArt(message)){
+      const button=document.createElement("button");
+      button.type="button";
+      button.dataset.mjlArrivalArt="";
+      button.textContent=message.getFlag(ID,"request").locationId?"Показать арт локации":"Показать арт региона";
+      button.addEventListener("click",()=>showPlaceArt(arrivalArt(message)));
+      card.append(button);
+    }
   }
   const publish=html.querySelector("[data-mjl-event]");
   if(publish) {
