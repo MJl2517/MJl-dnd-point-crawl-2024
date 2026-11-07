@@ -1,5 +1,5 @@
 export const ID = "mjl-pointcrawl";
-export const TITLE = "MJl Pointcrawl";
+export const TITLE = "MJl - Pointcrawl";
 export const PACE = {slow: {name: "Медленный", factor: 1.5}, normal: {name: "Нормальный", factor: 1}, fast: {name: "Быстрый", factor: .75}};
 export const TERRAIN = {
   arctic: {name: "Арктика", maxPace: "fast", detection: "6d6 * 10", forageDC: 20, navigationDC: 10, searchDC: 10},
