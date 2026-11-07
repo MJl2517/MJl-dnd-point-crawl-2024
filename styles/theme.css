@@ -20,14 +20,15 @@
   color:var(--mjl-paper);
 }
 .mjl-brand .window-icon {
-  background:center/contain no-repeat url("../art/raspberry.svg");
+  background:center/cover no-repeat url("../art/raspberry.webp");
   width:20px;
   height:20px;
   flex:none;
+  border-radius:4px;
 }
 .mjl-brand .window-icon::before { content:none; }
 .mjl-brand .window-content { background:var(--mjl-bg); color:var(--mjl-paper); }
-.mjl-brand :is(h2,h3,h4,button,input,select,textarea,.window-title) { font-family:inherit; }
+.mjl-brand :is(h2,h3,h4,input,select,textarea,.window-title),.mjl-brand button:not(.header-control) { font-family:inherit; }
 .mjl-brand :is(h2,h3,h4) { color:var(--mjl-paper); }
 .mjl-brand :is(a,summary) { color:var(--mjl-paper); }
 .mjl-brand :is(a,button,input,select,textarea,summary):focus-visible {
