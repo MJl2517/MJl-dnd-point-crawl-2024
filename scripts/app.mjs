@@ -42,6 +42,48 @@ export function showPlaceArt(art){
   if(!art?.src)return ui.notifications.warn("Арт этого места пока недоступен.");
   new foundry.applications.apps.ImagePopout({src:art.src,window:{title:art.name}}).render({force:true});
 }
+function bindArtPicker(dialog,art) {
+  const root=dialog.element,input=root.querySelector('[name="src"]'),zone=root.querySelector("[data-art-drop]");
+  const status=root.querySelector("[data-art-status]"),picker=root.querySelector("[data-art-picker]");
+  const save=root.querySelector('button[data-action="ok"]'),Picker=foundry.applications.apps.FilePicker.implementation;
+  zone.focus();
+  root.querySelector("[data-art-preview]")?.addEventListener("click",()=>showPlaceArt(art));
+  picker.addEventListener("click",()=>new Picker({type:"image",current:input.value,callback:path=>{input.value=path;status.textContent="";}}).render(true));
+  async function upload(files) {
+    if(save.disabled)return;
+    const file=files[0],ext=file?.name.match(/\.([a-z0-9]+)$/i)?.[1].toLowerCase();
+    if(files.length!==1||!file.size||!Object.hasOwn(CONST.IMAGE_FILE_EXTENSIONS,ext)||(file.type&&!file.type.startsWith("image/"))) {
+      status.textContent="Вставьте или перетащите один файл изображения поддерживаемого формата.";return;
+    }
+    if(!game.user.can("FILES_UPLOAD")) {status.textContent="У вас нет права загружать файлы в Foundry.";return;}
+    save.disabled=picker.disabled=input.readOnly=true;
+    status.textContent="Загрузка изображения…";
+    const folder=`worlds/${game.world.id}/${ID}-art`;
+    try {
+      try {await Picker.browse("data",folder);}
+      catch {await Picker.createDirectory("data",folder);}
+      const image=new File([file],`${foundry.utils.randomID()}.${ext}`,{type:file.type});
+      const result=await Picker.upload("data",folder,image,{},{notify:false});
+      need(result?.path,"Foundry не подтвердил загрузку.");
+      input.value=result.path;
+      status.textContent=`Загружено: ${file.name}. Нажмите «Сохранить арт».`;
+    } catch(error) {status.textContent=`Не удалось загрузить изображение. ${error.message}`;}
+    finally {save.disabled=picker.disabled=input.readOnly=false;}
+  }
+  root.addEventListener("paste",event=>{
+    const files=event.clipboardData?.files;
+    if(!files?.length)return;
+    event.preventDefault();event.stopPropagation();upload(files);
+  });
+  zone.addEventListener("dragover",event=>{
+    event.preventDefault();event.stopPropagation();
+    if(event.dataTransfer.types.includes("Files"))zone.classList.add("dragging");
+  });
+  zone.addEventListener("dragleave",()=>zone.classList.remove("dragging"));
+  zone.addEventListener("drop",event=>{
+    event.preventDefault();event.stopPropagation();zone.classList.remove("dragging");upload(event.dataTransfer.files);
+  });
+}
 function teleportOptions(scene,to,locationId) {
   const regions=game.user.isGM?Object.values(privateData(scene).regions):state(scene).regions.filter(r=>r.explored);
   return regions.filter(r=>r?.center).map(r=>`<optgroup label="${esc(r.name)}">${options(Object.fromEntries([[`${r.id}:`,"Центр региона"],...(r.locations??[]).filter(l=>game.user.isGM||l.revealed!==false).map(l=>[`${r.id}:${l.id}`,l.name])]),`${to}:${locationId??""}`)}</optgroup>`).join("");
@@ -311,13 +353,7 @@ export class PointcrawlApp extends ApplicationV2 {
       const hint=chronicleApi()?.setPointcrawlArt
         ?"Первое изображение в связанной карточке Хроники обновится в обоих модулях. Если карточки ещё нет, она будет создана."
         :"Изображение сохранится в Pointcrawl. Игроки смогут открыть его после раскрытия места.";
-      const src=await prompt(`Арт · ${art.name}`,`<p class="mjl-muted">${hint}</p>${field("Путь или ссылка на изображение","src",art.src,"text",'maxlength="2048" required')}<div class="mjl-actions">${art.src?'<button type="button" data-art-preview>Текущий арт</button>':""}<button type="button" data-art-picker><i class="fa-solid fa-folder-open"></i> Выбрать файл</button></div>`,form=>form.elements.src.value,"Сохранить арт",(_event,dialog)=>{
-        const input=dialog.element.querySelector('[name="src"]');
-        dialog.element.querySelector("[data-art-preview]")?.addEventListener("click",()=>showPlaceArt(art));
-        dialog.element.querySelector("[data-art-picker]").addEventListener("click",()=>{
-          new foundry.applications.apps.FilePicker.implementation({type:"image",current:input.value,callback:path=>{input.value=path;}}).render(true);
-        });
-      });
+      const src=await prompt(`Арт · ${art.name}`,`<p class="mjl-muted">${hint}</p><div class="mjl-art-drop" data-art-drop data-keyboard-focus="true" tabindex="0">Вставьте изображение через Ctrl+V или перетащите файл сюда</div><div data-art-status role="status"></div>${field("Путь или ссылка на изображение","src",art.src,"text",'maxlength="2048" required')}<div class="mjl-actions">${art.src?'<button type="button" data-art-preview>Текущий арт</button>':""}<button type="button" data-art-picker><i class="fa-solid fa-folder-open"></i> Выбрать файл</button></div>`,form=>form.elements.src.value,"Сохранить арт",(_event,dialog)=>bindArtPicker(dialog,art));
       if(src)await request("placeArt",{regionId,locationId,src},scene);
       return;
     }

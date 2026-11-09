@@ -3,7 +3,7 @@ import {state,privateData,partyToken,participants,regionAt,request} from "./stor
 import {PointcrawlApp,TravelCentre,RequestWindow} from "./app.mjs";
 import {fitRegion,shapeTree,subtractPaths,drawTree} from "./geometry.mjs";
 
-let overlay,stage,pick=null;
+let overlay,stage,pick=null,drawSceneId;
 let focusedExit,focusTimer;
 let paletteWork=Promise.resolve();
 export let preview=false;
@@ -124,7 +124,7 @@ export function redraw() {
 
 async function selectRegion(id) {
   const mode=toolName();
-  if(game.user.isGM&&(mode==="center"||pick?.action==="center"))return;
+  if(pick?.action==="center")return;
   const s=state(canvas.scene);
   if(id===s.currentRegionId&&mode==="travel")return visitLocation();
   if(id!==s.currentRegionId&&(mode==="travel"||!game.user.isGM)) {
@@ -138,7 +138,7 @@ async function selectRegion(id) {
 function pointer(event) {
   if(event.button!==0 || !game.user.isGM || !state(canvas.scene).enabled)return;
   const p=point(event),mode=toolName();
-  if(ui.controls.control?.name===ID&&ui.controls.tool?.creation&&!canvas.regions.preview.children.length)canvas.regions.releaseAll();
+  if(drawSceneId===canvas.scene.id&&!canvas.regions.preview.children.length)canvas.regions.releaseAll();
   if(pick?.action==="locationPoint") {
     event.stopPropagation();const pending=pick;
     if(!canvas.scene.regions.get(pending.regionId)?.polygonTree.testPoint(p)) {if(pending.warning)ui.notifications.remove(pending.warning);pending.warning=ui.notifications.warn("Pointcrawl: выберите точку внутри нужного региона. Esc — отмена.");return;}
@@ -175,14 +175,16 @@ export async function useTool({action,regionId,sceneId,onPick,onCancel}) {
   if(action==="draw") {
     need(game.user.isGM,"Только мастер рисует регионы.");
     canvas.regions.templateMode=false;canvas.regions.releaseAll();
-    await ui.controls.activate({control:ID,tool:"polygon"});
+    await ui.controls.activate({control:"regions",tool:"polygon"});
+    drawSceneId=canvas.scene.id;
     ui.notifications.info("Pointcrawl: нарисуйте один многоугольник штатным инструментом. После завершения сохраните карточку.");return;
   }
   if(action==="center") {
     need(game.user.isGM,"Только мастер устанавливает центр региона.");
     if(!state(canvas.scene).enabled) {PointcrawlApp.open({regionId,tab:"regions"});return;}
     if(regionId&&!canvas.scene.regions.has(regionId))regionId=null;
-    pick={action,regionId};await ui.controls.activate({control:ID,tool:"center"});
+    await ui.controls.activate({control:ID,tool:"inspect"});
+    pick={action,regionId};redraw();
     ui.notifications.info("Pointcrawl: щёлкните внутри региона для установки центра. Новая карточка сохранится автоматически. Esc — отмена.");return;
   }
   if(action==="locationPoint") {
@@ -192,7 +194,7 @@ export async function useTool({action,regionId,sceneId,onPick,onCancel}) {
     pick.notice=ui.notifications.info("Pointcrawl: щёлкните по карте внутри региона для размещения локации. Esc вернёт её карточку.");return;
   }
   if(action==="editBoundary") {
-    await ui.controls.activate({control:ID,tool:"select"});
+    await ui.controls.activate({control:"regions",tool:"select"});
     canvas.scene.regions.get(regionId)?.object?.control({releaseOthers:true});
     ui.notifications.info("Pointcrawl: измените вершины штатными маркерами региона. Центр и локации должны оставаться внутри.");
   }
@@ -242,17 +244,13 @@ export function controls(controls) {
       canvas.regions.setAllRenderFlags({refreshState:true});
       if(active&&!tool.control)canvas.regions.releaseAll();
     },activeTool:gm?"inspect":"travel",tools:{
-      hub:tool("hub","Центр путешествий","fa-solid fa-campground",1,{button:true,onChange:()=>TravelCentre.open()}),
-      travel:tool("travel","Перейти к центру или локации","fa-solid fa-person-hiking",2,{interaction:true,control:true}),
-      manager:tool("manager","Менеджер регионов","fa-solid fa-map",3,{button:true,visible:gm,onChange:()=>PointcrawlApp.open({tab:"regions"})}),
-      inspect:tool("inspect","Выбрать регион и открыть информацию","fa-solid fa-location-dot",4,{interaction:true,control:true,visible:gm}),
-      polygon:{...original.tools.polygon,visible:gm,control:true,order:5},
-      rectangle:{...original.tools.rectangle,visible:gm,control:true,order:6},
-      select:{...original.tools.select,visible:gm,order:7,title:"Редактировать границы региона"},
-      center:tool("center","Поставить центр выбранного региона","fa-solid fa-crosshairs",8,{interaction:true,control:true,visible:gm,onChange:(_e,enabled)=>{if(enabled&&!pick)run(()=>useTool({action:"center",regionId:canvas.regions.controlled[0]?.id}));}}),
-      togglePalette:{...original.tools.togglePalette,visible:gm&&original.tools.togglePalette.visible!==false,order:9,toggle:false,button:true,active:false,
+      manager:tool("manager","Менеджер регионов","fa-solid fa-map",1,{button:true,visible:gm,onChange:()=>PointcrawlApp.open({tab:"regions"})}),
+      hub:tool("hub","Центр путешествий","fa-solid fa-campground",2,{button:true,onChange:()=>TravelCentre.open()}),
+      inspect:tool("inspect","Выбрать регион и открыть информацию","fa-solid fa-location-dot",3,{interaction:true,control:true,visible:gm}),
+      travel:tool("travel","Перейти к центру или локации","fa-solid fa-person-hiking",4,{interaction:true,control:true}),
+      togglePalette:{...original.tools.togglePalette,visible:gm,order:5,toggle:false,button:true,active:false,
         onChange:(_event,active)=>gm&&toggleRegionPalette(!active)},
-      preview:tool("preview","Предпросмотр вида игроков","fa-solid fa-eye",10,{button:true,visible:gm,onChange:()=>run(()=>useTool({action:"preview"}))})
+      preview:tool("preview","Предпросмотр вида игроков","fa-solid fa-eye",6,{button:true,visible:gm,onChange:()=>run(()=>useTool({action:"preview"}))})
     }};
 }
 
@@ -291,7 +289,7 @@ export function validateGeometry(doc,changes) {
   } catch(e) {notify(e);return false;}
 }
 export function prepareRegion(doc) {
-  if(ui.controls.control?.name!==ID||!state(doc.parent).enabled)return;
+  if(drawSceneId!==doc.parent.id||!state(doc.parent).enabled)return;
   try {
     const fitted=fitRegion(doc.parent,doc.shapes,doc.id);
     doc.updateSource({...(fitted.changed?{shapes:fitted.shapes}:{}),name:"Новый регион",ownership:{default:0},displayMeasurements:false,restriction:{enabled:false},hidden:false,[`flags.${ID}.draft`]:true});
@@ -306,8 +304,13 @@ export function canvasReady() {
 }
 export function canvasTearDown() {
   document.getElementById(`${ID}-arrival`)?.remove();
+  drawSceneId=null;
   clearTimeout(focusTimer);focusedExit=null;
   if(stage)stage.off("pointerdowncapture",pointer);stage=null;
   overlay?.parent?.removeChild(overlay);overlay?.destroy({children:true});overlay=null;pick=null;
 }
+Hooks.on("activateSceneControls",()=>{
+  if(ui.controls.control?.name!=="regions"||!ui.controls.tool?.creation)drawSceneId=null;
+  if(pick?.action==="center"&&toolName()!=="inspect")cancelPick();
+});
 document.addEventListener("keydown",event=>{if(event.key==="Escape"){cancelPick();}});

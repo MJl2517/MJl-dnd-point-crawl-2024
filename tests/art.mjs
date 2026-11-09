@@ -37,15 +37,15 @@ try{
     const [r]=await scene.createEmbeddedDocuments("Region",[{name:"Регион",shapes:[{type:"rectangle",x:400,y:400,width:1000,height:800}]}]);
     await m.request("enable",{enabled:true},scene);
     await m.request("region",{regionId:r.id,values:{name:"Долина",center:{x:600,y:600},explored:true}},scene);
-    for(const [name,x,revealed] of [["Башня",900,true],["Секрет",1100,false]]){
+    for(const [name,x,revealed] of [["Башня",900,true],["Секрет",1100,false],["Место загрузки",1200,true]]){
       await m.request("location",{regionId:r.id,values:{name,x,y:900,revealed}},scene);
     }
-    const [location,hidden]=m.privateData(scene).regions[r.id].locations.map(l=>l.id);
+    const [location,hidden,uploadLocation]=m.privateData(scene).regions[r.id].locations.map(l=>l.id);
     const [token]=await scene.createEmbeddedDocuments("Token",[(await group.getTokenDocument({x:550,y:550,width:1,height:1})).toObject()]);
     await m.request("party",{tokenId:token.id},scene);
     await m.request("offlineSettings",{enabled:true,names:"Следопыт"},scene);
     await scene.activate();
-    return {scene:scene.id,regionId:r.id,locationId:location,hidden,actor:group.id};
+    return {scene:scene.id,regionId:r.id,locationId:location,hidden,uploadLocation,actor:group.id};
   });
   await until(gm,`canvas.ready&&canvas.scene.id==="${fixture.scene}"`);
   await ev(gm,async f=>{(await import("/modules/mjl-pointcrawl/scripts/app.mjs")).PointcrawlApp.open({regionId:f.regionId});},fixture);
@@ -55,6 +55,44 @@ try{
   await b.eval(`(()=>{const input=document.querySelector(".mjl-dialog [name=src]");input.value="icons/svg/castle.svg";input.form.querySelector('button[data-action=ok]').click();})()`,gm);
   await until(gm,`${sceneRef(fixture)}.getFlag("${pc}","state").regions[0].art==="icons/svg/castle.svg"`);
   console.log("PASS standalone region art saved from the GM dialog");
+
+  await until(gm,'!document.querySelector(".mjl-dialog [name=src]")');
+  await until(gm,`document.querySelector('[data-pc-action=placeArt][data-location="${fixture.uploadLocation}"]')`);
+  await b.eval(`document.querySelector('[data-pc-action=placeArt][data-location="${fixture.uploadLocation}"]').click()`,gm);
+  await until(gm,'document.querySelector("[data-art-drop]")');
+  assert.equal(await ev(gm,()=>{document.querySelector("[data-art-drop]").focus();return game.keyboard.hasFocus;}),true);
+  const transfer=kind=>ev(gm,async kind=>{
+    const zone=document.querySelector("[data-art-drop]"),data=new DataTransfer();
+    if(kind==="invalid")data.items.add(new File(["not an image"],"example.txt",{type:"text/plain"}));
+    else {
+      const image=document.createElement("canvas");image.width=image.height=16;
+      const brush=image.getContext("2d");brush.fillStyle=kind==="paste"?"#f80":"#08f";brush.fillRect(0,0,16,16);
+      const png=await new Promise(resolve=>image.toBlob(resolve,"image/png"));
+      data.items.add(new File([png],`${kind}.png`,{type:"image/png"}));
+    }
+    if(kind==="paste")zone.dispatchEvent(new ClipboardEvent("paste",{clipboardData:data,bubbles:true,cancelable:true}));
+    else zone.dispatchEvent(new DragEvent("drop",{dataTransfer:data,bubbles:true,cancelable:true}));
+  },kind);
+  const previous=await b.eval('document.querySelector(".mjl-dialog [name=src]").value',gm);
+  await transfer("invalid");
+  await until(gm,'document.querySelector("[data-art-status]").textContent.includes("поддерживаемого формата")');
+  assert.equal(await b.eval('document.querySelector(".mjl-dialog [name=src]").value',gm),previous);
+  const paths=[];
+  for(const kind of ["paste","drop"]){
+    await transfer(kind);
+    await until(gm,`document.querySelector("[data-art-status]").textContent.includes("Загружено: ${kind}.png")`);
+    const path=await b.eval('document.querySelector(".mjl-dialog [name=src]").value',gm);
+    assert.match(path,/^worlds\/pointcrawl-test\/mjl-pointcrawl-art\/\w+\.png$/);
+    assert.equal(await ev(gm,async path=>{
+      const response=await fetch(path),blob=await response.blob();
+      return response.ok&&blob.type==="image/png"&&(await createImageBitmap(blob)).width===16;
+    },path),true);
+    paths.push(path);
+  }
+  assert.notEqual(paths[0],paths[1]);
+  await b.eval('document.querySelector(".mjl-dialog [data-action=ok]").click()',gm);
+  await until(gm,`${sceneRef(fixture)}.getFlag("${pc}","state").regions[0].locations.find(l=>l.id==="${fixture.uploadLocation}").art===${JSON.stringify(paths[1])}`);
+  console.log("PASS clipboard and file drop upload real images; unsupported files are rejected and Save attaches the chosen image");
 
   await activateChronicle(true);
   await until(gm,`game.modules.get("${cj}").api?.setPointcrawlArt`);
@@ -147,5 +185,6 @@ try{
     await game.actors.get(f.actor)?.delete();
   },{...fixture,oldScene}).catch(console.error);
   if(configuration)await ev(gm,config=>game.settings.set("core","moduleConfiguration",config),configuration).catch(console.error);
+  if(gm)await b.call("Page.close",{},gm).catch(console.error);
   b.close();
 }

@@ -69,8 +69,9 @@ try {
     await scene.activate();game.togglePause(false,{broadcast:true});return {scene:scene.id,one:one.id,two:two.id,token:token.id,hero:hero.id,secretForest};
   });
   await until(gm,`canvas.ready&&canvas.scene.id==='${f.scene}'`);
-  await b.eval(`ui.controls.activate({control:'mjl-pointcrawl',tool:'polygon'})`,gm);
-  await until(gm,`ui.controls.control?.name==='mjl-pointcrawl'&&canvas.regions.active&&ui.controls.tool?.name==='polygon'&&!!document.querySelector('#scene-controls [data-tool=togglePalette]')`);
+  await b.eval(`ui.controls.activate({control:'mjl-pointcrawl',tool:'inspect'})`,gm);
+  await until(gm,`ui.controls.control?.name==='mjl-pointcrawl'&&canvas.regions.active&&!!document.querySelector('#scene-controls [data-tool=togglePalette]')`);
+  assert.deepEqual(await b.eval('[...document.querySelectorAll("#scene-controls-tools button[data-tool]")].map(b=>b.dataset.tool)',gm),['manager','hub','inspect','travel','togglePalette','preview']);
   await b.eval(`document.querySelector('#scene-controls [data-tool=togglePalette]').click()`,gm);
   await until(gm,'ui.placeablesPalette?.rendered&&ui.placeablesPalette.id==="region-palette"');
   await ev(gm,()=>{const input=ui.placeablesPalette.element.querySelector('color-picker input[type=color]');input.value='#2978d4';input.dispatchEvent(new Event('change',{bubbles:true}));});
@@ -103,9 +104,8 @@ try {
     }
     document.body.className=before;return result;
   });
-  assert.equal(themes[0].scheme,'dark');assert.equal(themes[1].scheme,'light');
-  assert.notEqual(themes[0].background,themes[1].background);assert(themes.every(t=>t.background!==t.color&&!t.background.includes('rgba')));
-  pass('Native select options use opaque matching backgrounds and readable text in dark and light application themes');
+  assert(themes.every(t=>t.scheme==='dark'&&t.background!==t.color&&!t.background.includes('rgba')));
+  pass('Native select options use opaque backgrounds and readable text in the module’s branded dark theme');
   await b.eval('document.querySelector("#mjl-pointcrawl-manager [data-pc-action=location]:not([data-id])").click()',gm);
   await until(gm,'!!document.querySelector("[data-location-pick]")');
   await ev(gm,()=>{const form=document.querySelector('[data-location-pick]').form;form.elements.name.value='Родник';form.elements.description.value='Вода у старого дуба';form.elements.notes.value='SECRET_SPRING_LOC';form.elements.revealed.checked=true;const color=form.querySelector('color-picker input[type=color]');color.value='#ef5466';color.dispatchEvent(new Event('change',{bubbles:true}));form.querySelector('[data-location-pick]').click();});

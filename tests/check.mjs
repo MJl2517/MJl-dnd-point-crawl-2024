@@ -68,7 +68,7 @@ function nativeDoc(value,collection) {
 globalThis.Folder={async create(value){return nativeDoc(value,folderDocs);}};
 globalThis.JournalEntry={async create(value){return nativeDoc(value,journalDocs);}};
 globalThis.foundry={utils:{randomID:()=>`id${++serial}`}};
-globalThis.Hooks={callAll(){}};
+globalThis.Hooks={callAll(){},on(){}};
 globalThis.CONFIG={DND5E:{restTypes:{short:{duration:{normal:60}},long:{duration:{normal:480}}}}};
 globalThis.ChatMessage={async create(value){const id=`message${++serial}`;const m={id,...value,async update(changes){Object.assign(this,changes);if(changes.flags?.[ID]?.request)this[`flags.${ID}.request`]=structuredClone(changes.flags[ID].request);}};messages.set(id,m);return m;}};
 globalThis.Roll=class {constructor(formula){this.formula=formula;}async evaluate(){this.total=this.formula.includes("-10")?-9:6;return this;}toJSON(){return {formula:this.formula,total:this.total};}};
@@ -275,7 +275,7 @@ for(const userId of ["gm","player"]) {
   game.user=users.get(userId);
   const native={regions:{tools:Object.fromEntries(["polygon","rectangle","select","togglePalette"].map(name=>[name,{name}]))}};
   controls(native);const tools=native[ID].tools;
-  eq(Object.values(tools).filter(t=>t.visible!==false).sort((a,b)=>a.order-b.order).map(t=>t.name),userId==="gm"?["hub","travel","manager","inspect","polygon","rectangle","select","center","togglePalette","preview"]:["hub","travel"]);
+  eq(Object.values(tools).filter(t=>t.visible!==false).sort((a,b)=>a.order-b.order).map(t=>t.name),userId==="gm"?["manager","hub","inspect","travel","togglePalette","preview"]:["hub","travel"]);
   eq(Object.hasOwn(tools,"connect"),false);
 }
 game.user=users.get("gm");

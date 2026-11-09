@@ -17,7 +17,8 @@ try {
   await until(`canvas.ready && canvas.scene.id===${JSON.stringify(scene)}`);
   await ev(async()=>{
     await (await import('/modules/mjl-pointcrawl/scripts/store.mjs')).request('enable',{enabled:true});
-    await ui.controls.activate({control:'mjl-pointcrawl',tool:'rectangle'});game.togglePause(false,{broadcast:true});
+    await (await import('/modules/mjl-pointcrawl/scripts/canvas.mjs')).useTool({action:'draw'});
+    await ui.controls.activate({control:'regions',tool:'rectangle'});game.togglePause(false,{broadcast:true});
   });
   const a=await ev(async()=>{const [doc]=await canvas.scene.createEmbeddedDocuments('Region',[{name:'A',shapes:[{type:'rectangle',x:400,y:400,width:400,height:400}]}]);await (await import('/modules/mjl-pointcrawl/scripts/store.mjs')).request('region',{regionId:doc.id,values:{name:'Первая область',center:{x:600,y:600}}});return {id:doc.id,shapes:JSON.stringify(doc.toObject().shapes),area:doc.polygonTree.area};});
   assert.equal(a.area,160000);pass('A native rectangle saves as a travel region without a false hole error');
@@ -38,11 +39,12 @@ try {
   const edited=await ev(async id=>{const doc=canvas.scene.regions.get(id);await doc.update({shapes:[{type:'rectangle',x:600,y:500,width:500,height:400}]});return doc.polygonTree.area;},edge.id);
   assert.equal(edited,140000);assert.equal(await ev(id=>JSON.stringify(canvas.scene.regions.get(id).toObject().shapes),a.id),a.shapes);pass('Editing a registered boundary also trims intersections without altering neighbours');
   const legacy=await ev(async()=>{
-    await ui.controls.activate({control:'regions',tool:'rectangle'});
+    await ui.controls.activate({control:'regions',tool:'select'});
     const [doc]=await canvas.scene.createEmbeddedDocuments('Region',[{name:'Старый квадрат с размерами',displayMeasurements:true,shapes:[{type:'rectangle',x:2000,y:1000,width:200,height:200}]}]);
     const m=await import('/modules/mjl-pointcrawl/scripts/store.mjs');const selected=m.regionAt(canvas.scene,{x:2100,y:1100},true)?.id;
     await m.request('region',{regionId:doc.id,values:{center:{x:2100,y:1100}}});
-    await ui.controls.activate({control:'mjl-pointcrawl',tool:'rectangle'});return {id:doc.id,selected,area:doc.polygonTree.area};
+    await (await import('/modules/mjl-pointcrawl/scripts/canvas.mjs')).useTool({action:'draw'});
+    await ui.controls.activate({control:'regions',tool:'rectangle'});return {id:doc.id,selected,area:doc.polygonTree.area};
   });
   assert.equal(legacy.selected,legacy.id);assert.equal(legacy.area,40000);pass('An existing square with display-measurements enabled is still selectable and valid');
   const split=await ev(async()=>{

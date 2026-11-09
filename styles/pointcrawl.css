@@ -61,6 +61,9 @@
 .mjl-table-drop{padding:16px;text-align:center;border:1px dashed var(--pc-line);border-radius:6px;margin:12px 0;font-size:12px;color:var(--color-text-secondary)}
 .mjl-import-preview{max-height:240px;overflow:auto;white-space:pre-wrap}.mjl-card h3{font-size:16px}.mjl-card li{margin:5px 0}.mjl-card button{width:100%}
 .mjl-dialog .dialog-content{overflow-y:auto;min-height:0}.mjl-dialog-fields{display:grid;gap:12px}.mjl-dialog-fields label{margin:0}
+.mjl-art-drop{padding:22px 12px;border:1px dashed var(--mjl-accent);border-radius:6px;text-align:center}
+.mjl-art-drop:is(.dragging,:focus-visible){background:var(--mjl-hover);outline:1px solid var(--mjl-accent)}
+.mjl-dialog [data-art-status]:empty{display:none}
 .mjl-dialog-fields label:has(>input[type=checkbox]){flex-direction:row;align-items:center;gap:8px;font-weight:400}.mjl-dialog-fields input[type=checkbox]{width:18px;margin:0}
 .mjl-dialog .form-footer{display:flex;gap:8px}.mjl-dialog .form-footer button{flex:1}
 .mjl-location-layout{display:grid;gap:14px;min-width:0}.mjl-location-layout label{display:flex;flex-direction:column;gap:6px;margin:0;font-size:12px;font-weight:500}

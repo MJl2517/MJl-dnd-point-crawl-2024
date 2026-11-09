@@ -65,7 +65,7 @@ Hooks.on("updateScene",(_scene,changes)=>{
 });
 Hooks.on("createRegion",(doc,_options,userId)=>{
   refresh();
-  if(game.user.id===userId&&ui.controls.control?.name===ID&&state(doc.parent).enabled)PointcrawlApp.open({regionId:doc.id});
+  if(game.user.id===userId&&doc.getFlag(ID,"draft")&&state(doc.parent).enabled)PointcrawlApp.open({regionId:doc.id});
 });
 Hooks.on("deleteRegion",doc=>{
   if(game.users.activeGM?.isSelf&&state(doc.parent).enabled&&privateData(doc.parent).regions[doc.id])
