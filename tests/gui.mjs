@@ -38,7 +38,7 @@ try {
   await until(gm,`(async()=>{const a=await import('/modules/mjl-pointcrawl/scripts/app.mjs'),s=await import('/modules/mjl-pointcrawl/scripts/store.mjs');return !a.PointcrawlApp.instance.busy && s.privateData(canvas.scene).regions[${JSON.stringify(fixture.two)}].notes===${JSON.stringify(secret)};})()`);
   await b.screenshot('mjl-pointcrawl/dev/gm-region-editor.png',gm);pass('Region form saves public description and separate GM notes through the real UI');
   await click(gm,'[data-pc-action=tab][data-tab=tables]');await until(gm,'!!document.querySelector("textarea[name=json]")');
-  await ev(gm,()=>{document.querySelector('textarea[name=json]').value=JSON.stringify({schemaVersion:1,name:'Таблица из интерфейса',results:[{weight:1,title:'Путник',text:'На тропе появляется одинокий путник.'}]});});
+  await ev(gm,()=>{const input=document.querySelector('textarea[name=json]');input.closest('details').open=true;input.value=JSON.stringify({schemaVersion:1,name:'Таблица из интерфейса',results:[{weight:1,title:'Путник',text:'На тропе появляется одинокий путник.'}]});input.dispatchEvent(new Event('input',{bubbles:true}));});
   await click(gm,'[data-pc-action=previewImport]');await until(gm,'!document.querySelector("[data-pc-action=importTable]").disabled');
   assert.equal(await b.eval('document.querySelector(".mjl-import-preview").textContent.includes("Путник")',gm),true);
   await click(gm,'[data-pc-action=importTable]');await until(gm,'!!game.tables.find(t=>t.name === "Таблица из интерфейса")');pass('JSON file-text preview and import button produce a native RollTable');
