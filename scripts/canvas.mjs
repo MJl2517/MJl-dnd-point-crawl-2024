@@ -1,6 +1,6 @@
 import {ID, TITLE, need, secondsLabel, unknownExitLabels} from "./rules.mjs";
-import {state,privateData,partyToken,participants,regionAt,request} from "./store.mjs";
-import {PointcrawlApp,TravelCentre,RequestWindow} from "./app.mjs";
+import {state,privateData,partyToken,participants,regionAt,request,requestRestriction} from "./store.mjs";
+import {PointcrawlApp,TravelCentre,RequestWindow,showPlaceDescription} from "./app.mjs";
 import {fitRegion,shapeTree,subtractPaths,drawTree} from "./geometry.mjs";
 
 let overlay,stage,pick=null,drawSceneId;
@@ -34,6 +34,7 @@ function routeBadge(edge,seconds,color,x,y) {
 function clearPickNotice(pending) {for(const n of [pending?.notice,pending?.warning])if(n)ui.notifications.remove(n);}
 function cancelPick() {const pending=pick;pick=null;clearPickNotice(pending);if(pending?.onCancel)run(pending.onCancel);if(pending)redraw();}
 async function visitLocation(locationId=null) {
+  const restriction=requestRestriction(canvas.scene);need(!restriction,restriction);
   const actors=participants(canvas.scene).filter(a=>game.user.isGM||a.isOwner).map(a=>a.id);
   need(actors.length,"Нет персонажа партии под вашим управлением.");
   const requestId=await request("create",{kind:"local",locationId,actors});RequestWindow.open({requestId});
@@ -114,6 +115,7 @@ export function redraw() {
       mark.eventMode=container.eventMode;mark.cursor="pointer";mark.hitArea=new PIXI.Circle(0,0,16);
       mark.on("pointerdown",e=>e.stopPropagation());
       mark.on("pointertap",e=>{e.stopPropagation();run(async()=>{
+        if(toolName()==="describe")return showPlaceDescription(canvas.scene,r.id,l.id);
         if(game.user.isGM&&toolName()==="inspect") {
           const app=PointcrawlApp.instance??=new PointcrawlApp();app.regionId=r.id;await app.locationDialog(l.id);
         } else {need(r.id===s.currentRegionId,"Сначала перейдите в регион этой локации.");await visitLocation(l.id);}
@@ -126,8 +128,13 @@ async function selectRegion(id) {
   const mode=toolName();
   if(pick?.action==="center")return;
   const s=state(canvas.scene);
+  if(mode==="describe") {
+    need(game.user.isGM&&!preview||s.regions.some(r=>r.id===id&&r.explored),"Регион ещё не открыт.");
+    return showPlaceDescription(canvas.scene,id);
+  }
   if(id===s.currentRegionId&&mode==="travel")return visitLocation();
   if(id!==s.currentRegionId&&(mode==="travel"||!game.user.isGM)) {
+    const restriction=requestRestriction(canvas.scene);need(!restriction,restriction);
     const actors=participants(canvas.scene).filter(a=>game.user.isGM||a.isOwner).map(a=>a.id);
     need(actors.length,"Нет персонажа партии под вашим управлением.");
     const requestId=await request("create",{kind:"travel",to:id,actors,pace:"normal"});RequestWindow.open({requestId});return;
@@ -248,9 +255,10 @@ export function controls(controls) {
       hub:tool("hub","Центр путешествий","fa-solid fa-campground",2,{button:true,onChange:()=>TravelCentre.open()}),
       inspect:tool("inspect","Выбрать регион и открыть информацию","fa-solid fa-location-dot",3,{interaction:true,control:true,visible:gm}),
       travel:tool("travel","Перейти к центру или локации","fa-solid fa-person-hiking",4,{interaction:true,control:true}),
-      togglePalette:{...original.tools.togglePalette,visible:gm,order:5,toggle:false,button:true,active:false,
+      describe:tool("describe","Описание региона или локации","fa-solid fa-book-open",5,{interaction:true,control:true}),
+      togglePalette:{...original.tools.togglePalette,visible:gm,order:6,toggle:false,button:true,active:false,
         onChange:(_event,active)=>gm&&toggleRegionPalette(!active)},
-      preview:tool("preview","Предпросмотр вида игроков","fa-solid fa-eye",6,{button:true,visible:gm,onChange:()=>run(()=>useTool({action:"preview"}))})
+      preview:tool("preview","Предпросмотр вида игроков","fa-solid fa-eye",7,{button:true,visible:gm,onChange:()=>run(()=>useTool({action:"preview"}))})
     }};
 }
 

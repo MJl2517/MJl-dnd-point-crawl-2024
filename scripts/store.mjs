@@ -7,6 +7,14 @@ let socket, queue=Promise.resolve();
 export const state = scene => scene?.getFlag(ID,"state") ?? {enabled:false,regions:[],routes:[],active:null};
 export const partyToken = scene => scene?.tokens.get(state(scene).tokenId);
 export const members = scene => partyToken(scene)?.actor?.system.playerCharacters ?? [];
+export function requestRestriction(scene,user=game.user) {
+  const {guideOnly,guideId}=state(scene);
+  if(user.isGM||!guideOnly)return "";
+  if(!guideId)return "Мастер должен назначить проводника, прежде чем игроки смогут подавать заявки.";
+  const guide=members(scene).find(a=>a.id===guideId);
+  return guide?.testUserPermission(user,"OWNER")?"":"Заявки может подавать только проводник группы.";
+}
+export const requestInitiator = r => r.createdByName??game.users.get(r.createdBy)?.name??"Неизвестен";
 export function participants(scene,data=privateData(scene)) {
   if(!(data.offline?.enabled??state(scene).offline))return members(scene);
   if(!data.offline||!partyToken(scene))return [];
@@ -145,7 +153,7 @@ export function publicRequest(r,scene,data) {
   const dest=data.regions[r.to??r.regionId],location=r.locationId?dest?.locations.find(l=>l.id===r.locationId):null;
   const unknown=r.exitLabel?`Неизвестный регион ${r.exitLabel}`:"Неизвестный регион";
   const destination=["local","teleport"].includes(r.kind)?(r.locationId?(dest?.explored&&location?.revealed?location.name:"Скрытая локация"):`Центр: ${dest?.explored?dest.name:"Неизвестный регион"}`):r.to?(dest?.explored?dest.name:unknown):null;
-  return {id:r.id,sceneId:scene.id,kind:r.kind,status:r.status,offline:!!r.offlineParticipants,createdBy:r.createdBy,assignedUsers:clone(r.assignedUsers??{}),actors:r.actors.map(id=>({id,name:participantName(r,id)})),
+  return {id:r.id,sceneId:scene.id,kind:r.kind,status:r.status,offline:!!r.offlineParticipants,createdBy:r.createdBy,createdByName:requestInitiator(r),assignedUsers:clone(r.assignedUsers??{}),actors:r.actors.map(id=>({id,name:participantName(r,id)})),
     regionId:r.regionId,from:r.from,to:r.to,locationId:r.locationId,pace:r.pace,paces:r.paces,miles:r.miles,effectivePace:r.effectivePace,road:!!r.road,source:r.source,seconds:r.seconds,baseSeconds:r.baseSeconds,risk:r.risk,dc:r.dc,penalty:r.penalty,
     origin:data.regions[r.regionId]?.explored?data.regions[r.regionId].name:"Неизвестный регион",
     destination,
@@ -171,7 +179,7 @@ export async function publish(scene,data,extra={}) {
 export function card(r,scene,data) {
   const p=publicRequest(r,scene,data);
   const rows=p.actors.map(a=>`<li>${esc(a.name)} — ${r.status==="pending"?"ожидает решения мастера":!needsParticipant(r)?"проверка не требуется":r.outcomes[a.id] ? esc(r.outcomes[a.id].label) : r.running[a.id] ? "выполняется" : "ожидает"}</li>`).join("");
-  return `<div class="mjl-card" data-scene="${scene.id}" data-request="${r.id}"><h3><i class="fa-solid fa-route"></i> ${ACTIONS[r.kind]}</h3><p>${STATUS[r.status]}</p>${p.destination?`<p>Назначение: <strong>${esc(p.destination)}</strong>${r.kind==="travel"?` · ${PACE[r.effectivePace??r.pace].name}`:""}</p>`:""}<p>Время: <strong>${r.seconds==null?"назначит мастер":secondsLabel(r.seconds)}</strong>${r.dc!=null&&needsParticipant(r)?` · Сл. ${r.dc}`:""}${r.penalty?` · потеря пути +${r.penalty}%`:""}</p>${["travel","local"].includes(r.kind)?`<p>В пути: ${secondsLabel(p.daySeconds)} / 8 ч${r.elapsedSeconds?` · пройдено по заявке ${secondsLabel(r.elapsedSeconds)}`:""}${r.phase==="marchSave"?` · спасброски Телосложения, Сл. ${r.dc}`:""}</p>`:""}<ul>${rows}</ul>${r.error?`<p class="mjl-error">${esc(r.error)}</p>`:""}<button type="button" data-mjl-open="${r.id}">Открыть заявку</button></div>`;
+  return `<div class="mjl-card" data-scene="${scene.id}" data-request="${r.id}"><h3><i class="fa-solid fa-route"></i> ${ACTIONS[r.kind]}</h3><p>${STATUS[r.status]}</p><p>Инициатор: <strong>${esc(p.createdByName)}</strong></p>${p.destination?`<p>Назначение: <strong>${esc(p.destination)}</strong>${r.kind==="travel"?` · ${PACE[r.effectivePace??r.pace].name}`:""}</p>`:""}<p>Время: <strong>${r.seconds==null?"назначит мастер":secondsLabel(r.seconds)}</strong>${r.dc!=null&&needsParticipant(r)?` · Сл. ${r.dc}`:""}${r.penalty?` · потеря пути +${r.penalty}%`:""}</p>${["travel","local"].includes(r.kind)?`<p>В пути: ${secondsLabel(p.daySeconds)} / 8 ч${r.elapsedSeconds?` · пройдено по заявке ${secondsLabel(r.elapsedSeconds)}`:""}${r.phase==="marchSave"?` · спасброски Телосложения, Сл. ${r.dc}`:""}</p>`:""}<ul>${rows}</ul>${r.error?`<p class="mjl-error">${esc(r.error)}</p>`:""}<button type="button" data-mjl-open="${r.id}">Открыть заявку</button></div>`;
 }
 async function syncCard(scene,data,r) {
   const message=game.messages.get(r.messageId);
@@ -179,9 +187,10 @@ async function syncCard(scene,data,r) {
 }
 async function persist(scene,data,r) { await save(scene,data); await publish(scene,data); if(r) await syncCard(scene,data,r); }
 
-async function createRequest(scene,data,kind,user,args,parent=null) {
+async function createRequest(scene,data,kind,user,args,parent=null,initiator=user) {
   need(Object.hasOwn(ACTIONS,kind),"Неизвестное действие партии.");
   checkParty(scene,data); ownsParty(user,scene,data);
+  const restriction=requestRestriction(scene,user);need(!restriction,restriction);
   need(!active(data)||active(data)===parent||["done","rejected"].includes(active(data).status),"Сначала завершите текущую заявку партии.");
   const partyId=partyToken(scene).actor.id;
   need(!activeElsewhere(scene,partyId),"У этой партии есть незавершённая заявка на другой сцене.");
@@ -192,7 +201,7 @@ async function createRequest(scene,data,kind,user,args,parent=null) {
   if(!user.isGM&&kind!=="search") need(actors.every(id=>game.actors.get(id).testUserPermission(user,"OWNER")),"Можно заявлять действия только своих персонажей.");
   if(["travel","local"].includes(kind)&&memberIds(scene,data).includes(state(scene).guideId))actors=[state(scene).guideId];
   if(["navigation","travel","local","teleport"].includes(kind)) actors=[actors[0]];
-  const r={id:uid(),kind,partyId,status:"pending",createdBy:user.id,regionId:here.id,actors,outcomes:{},running:{},seconds:3600,pace:args.pace??"normal",penalty:0,step:0,elapsedSeconds:0,profile:partyProfile(scene,data)};
+  const r={id:uid(),kind,partyId,status:"pending",createdBy:initiator.id,createdByName:initiator.name,regionId:here.id,actors,outcomes:{},running:{},seconds:3600,pace:args.pace??"normal",penalty:0,step:0,elapsedSeconds:0,profile:partyProfile(scene,data)};
   if(data.offline?.enabled)r.offlineParticipants=roster;
   if(kind==="teleport") {
     const target=teleportTarget(scene,data,args.to,args.locationId,user),origin=tokenPoint(partyToken(scene));
@@ -345,7 +354,7 @@ async function recordOffline(scene,data,r,args,user) {
 
 async function restInJourney(scene,data,r,user) {
   const gm=game.users.get(game.users.activeGM?.id)??user;
-  const id=await createRequest(scene,data,"long",gm,{actors:memberIds(scene,data)},r);
+  const id=await createRequest(scene,data,"long",gm,{actors:memberIds(scene,data)},r,game.users.get(r.restRequestedBy)??user);
   await syncCard(scene,data,r);return id;
 }
 async function finish(scene,data,r,user,recover=false,skipTime=false,skipExhaustion=false,skipLedger=false) {
@@ -478,8 +487,12 @@ export async function processRequest(args,senderId) {
   }
   if(args.action==="guide") {
     checkParty(scene,data);ownsParty(user,scene,data);need(!active(data),"Завершите текущую заявку перед сменой проводника.");
+    if(state(scene).guideOnly||Object.hasOwn(args,"guideOnly"))gmOnly(user);
+    const guideOnly=args.guideOnly??state(scene).guideOnly??false;
     const id=args.actorId??null;need(id===null||memberIds(scene,data).includes(id),"Проводник должен входить в состав партии.");
-    await publish(scene,data,{guideId:id});return;
+    need(typeof guideOnly==="boolean","Недопустимая настройка проводника.");
+    need(!guideOnly||data.offline?.enabled||id!==null,"Назначьте проводника, чтобы ограничить подачу заявок.");
+    await publish(scene,data,{guideId:id,guideOnly});return;
   }
   if(args.action==="region") {
     gmOnly(user); const doc=scene.regions.get(args.regionId); need(doc,"Сначала нарисуйте границу.");
@@ -593,6 +606,8 @@ export async function processRequest(args,senderId) {
     ownsParty(user,scene,data);need(data.activeId===r.id&&["travel","local"].includes(r.kind)&&["pending","approved","camp"].includes(r.status)&&r.phase!=="marchSave","Сейчас нельзя менять решение о продолжении пути.");
     need(!Object.values(r.running).some(Boolean),"Сначала завершите открытый бросок.");
     if(args.choice==="rest") {
+      const restriction=requestRestriction(scene,user);need(!restriction,restriction);
+      r.restRequestedBy=user.id;
       if(journey(scene,data).seconds>=TRAVEL_LIMIT)return restInJourney(scene,data,r,user);
       r.restAtLimit=true;r.march=false;r.marchRequested=false;
     } else {need(args.choice==="march","Выберите отдых или марш.");r.marchRequested=true;r.restAtLimit=false;}

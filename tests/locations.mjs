@@ -60,7 +60,7 @@ try {
     const regions=await scene.createEmbeddedDocuments('Region',[{name:'one',shapes:[{type:'rectangle',x:400,y:400,width:800,height:800}]},{name:'two',shapes:[{type:'rectangle',x:1200,y:400,width:800,height:800}]}]);
     const one=regions.find(r=>r.name==='one'),two=regions.find(r=>r.name==='two');
     await m.request('enable',{enabled:true},scene);
-    await m.request('region',{regionId:one.id,values:{name:'Зелёная долина',center:{x:600,y:600},explored:true}},scene);
+    await m.request('region',{regionId:one.id,values:{name:'Зелёная долина',description:'Дорога вдоль реки.',center:{x:600,y:600},explored:true}},scene);
     const secretForest=`SECRET_FOREST_LOC_${scene.id}`;
     await m.request('region',{regionId:two.id,values:{name:secretForest,center:{x:1600,y:600},color:'#d33b99'}},scene);
     await m.request('location',{regionId:one.id,values:{name:'SECRET_CAVE_LOC',notes:'SECRET_NOTES_LOC',description:'',x:700,y:1000,revealed:false,color:'#b74fe7'}},scene);
@@ -71,7 +71,7 @@ try {
   await until(gm,`canvas.ready&&canvas.scene.id==='${f.scene}'`);
   await b.eval(`ui.controls.activate({control:'mjl-pointcrawl',tool:'inspect'})`,gm);
   await until(gm,`ui.controls.control?.name==='mjl-pointcrawl'&&canvas.regions.active&&!!document.querySelector('#scene-controls [data-tool=togglePalette]')`);
-  assert.deepEqual(await b.eval('[...document.querySelectorAll("#scene-controls-tools button[data-tool]")].map(b=>b.dataset.tool)',gm),['manager','hub','inspect','travel','togglePalette','preview']);
+  assert.deepEqual(await b.eval('[...document.querySelectorAll("#scene-controls-tools button[data-tool]")].map(b=>b.dataset.tool)',gm),['manager','hub','inspect','travel','describe','togglePalette','preview']);
   await b.eval(`document.querySelector('#scene-controls [data-tool=togglePalette]').click()`,gm);
   await until(gm,'ui.placeablesPalette?.rendered&&ui.placeablesPalette.id==="region-palette"');
   await ev(gm,()=>{const input=ui.placeablesPalette.element.querySelector('color-picker input[type=color]');input.value='#2978d4';input.dispatchEvent(new Event('change',{bubbles:true}));});
@@ -161,6 +161,20 @@ try {
   assert.equal(await marker(player,`location-name-${spring.id}`),null);assert(await marker(player,`location-point-${spring.id}`));
   pass('Routes show normal travel time; centre and location names can be hidden without hiding the points');
   await ev(gm,async()=>{for(const a of [ ...(await import('/modules/mjl-pointcrawl/scripts/app.mjs')).RequestWindow.windows.values(),(await import('/modules/mjl-pointcrawl/scripts/app.mjs')).PointcrawlApp.instance])if(a?.rendered)await a.close();});
+  for(const client of [gm,player]) {
+    await b.eval('document.querySelector("#scene-controls-tools [data-tool=describe]").click()',client);
+    await until(client,'ui.controls.tool?.name==="describe"');
+    for(const [x,y,description] of [[600,600,'Дорога вдоль реки.'],[1000,850,'Вода у старого дуба']]) {
+      await click(client,x,y);
+      await until(client,`document.querySelector("[data-place-description]")?.textContent===${JSON.stringify(description)}`);
+      assert.equal(await b.eval('document.querySelector("[data-place-description]").textContent.includes("SECRET_")',client),false);
+      await b.eval('document.querySelector("[data-place-description]").closest("form").querySelector("[data-action=ok]").click()',client);
+      await until(client,'!document.querySelector("[data-place-description]")');
+    }
+  }
+  assert.equal(await b.eval('canvas.scene.getFlag("mjl-pointcrawl","state").active',gm),null);
+  pass('GM and player can open region and location descriptions directly from the map without creating a request');
+  await b.eval('ui.controls.activate({control:"mjl-pointcrawl",tool:"travel"})',player);
   await click(player,1000,850);
   let id=await until(gm,'canvas.scene.getFlag("mjl-pointcrawl","state").active?.id');
   assert.equal(await b.eval('canvas.scene.getFlag("mjl-pointcrawl","state").active.kind',player),'local');

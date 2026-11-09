@@ -95,6 +95,21 @@ try {
   assert.equal(await b.eval('canvas.scene.getFlag("mjl-pointcrawl","state").guideId',gm),f.guide);
   await send(gm,'reject',{requestId:id});
   pass('Inter-region travel uses the guide too; GM override affects only that request');
+  await centre(gm);await centre(navigator);
+  await ev(gm,guide=>{
+    const form=document.querySelector('#mjl-pointcrawl-centre [data-form=guide]');
+    form.elements.guide.value=guide;form.elements.guideOnly.checked=true;form.requestSubmit();
+  },f.guide);
+  await until(player,'document.querySelector("#mjl-pointcrawl-centre [data-pc-action=travel]")?.disabled&&document.querySelector("[data-form=guide] [name=guide]")?.disabled');
+  await assert.rejects(()=>send(player,'create',{kind:'travel',to:f.two,actors:[f.hero]}),/только проводник/);
+  await assert.rejects(()=>send(player,'guide',{actorId:f.hero}),/только мастеру/);
+  await until(navigator,'canvas.scene.getFlag("mjl-pointcrawl","state").guideOnly&&!document.querySelector("#mjl-pointcrawl-centre [data-pc-action=travel]")?.disabled');
+  id=await create(navigator,`#mjl-pointcrawl-centre [data-pc-action=travel][data-to="${f.two}"]`);
+  await until(gm,`document.querySelector('#mjl-pointcrawl-request-${id} .mjl-facts')?.textContent.includes("Pointcrawl Navigator")`);
+  await until(player,`game.messages.some(m=>m.getFlag("mjl-pointcrawl","requestId")==="${id}"&&m.content.includes("Инициатор")&&m.content.includes("Pointcrawl Navigator"))`);
+  await send(gm,'reject',{requestId:id});
+  await send(gm,'guide',{actorId:f.guide,guideOnly:false});
+  pass('Guide-only mode blocks another player in the UI and on the GM socket, and shows the guide owner as initiator');
   const errors=b.events.filter(e=>e.method==='Runtime.exceptionThrown');assert.equal(errors.length,0,JSON.stringify(errors));pass('No uncaught JavaScript errors across three clients');report.success=true;
 } catch(e) {report.success=false;report.error=e.stack;console.error(e);process.exitCode=1;for(const [name,s] of [['guide-gm-failure',gm],['guide-player-failure',player],['guide-navigator-failure',navigator]])if(s)await b.screenshot(`mjl-pointcrawl/dev/${name}.png`,s).catch(()=>{});
 } finally {await writeFile('mjl-pointcrawl/dev/guides-report.json',JSON.stringify(report,null,2));for(const id of contexts)await b.call('Target.disposeBrowserContext',{browserContextId:id}).catch(()=>{});b.close();}

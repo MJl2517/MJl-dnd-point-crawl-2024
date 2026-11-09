@@ -44,7 +44,7 @@ bad(()=>validateRequest(req,"a",{},["a"]),/Нет права/);
 
 // Small in-memory Foundry boundary: exercise the actual authority/commit path, not a second implementation.
 let serial=0,clock=0,failToken=false,lastMoveOptions;
-const users=new Map([["gm",{id:"gm",active:true,isGM:true}],["player",{id:"player",active:true,isGM:false}],["outsider",{id:"outsider",active:true,isGM:false}]]);
+const users=new Map([["gm",{id:"gm",name:"Мастер",active:true,isGM:true}],["player",{id:"player",name:"Игрок <1>",active:true,isGM:false}],["outsider",{id:"outsider",active:true,isGM:false}]]);
 users.activeGM={isSelf:true};users.filter=fn=>[...users.values()].filter(fn);
 const messages=new Map();messages.find=fn=>[...messages.values()].find(fn);
 const flags={};
@@ -80,12 +80,14 @@ const send=(action,args={},user="gm")=>processRequest({sceneId:scene.id,action,.
 await reject(()=>send("create",{kind:"travel",to:"two",actors:["hero"]},"outsider"),/Нет права/);
 await reject(()=>send("route",{from:"one",to:"two",seconds:1},"player"),/только мастеру/);
 await reject(()=>send("create",{kind:"unknown",actors:["hero"]},"player"),/Неизвестное действие/);
-const id=await send("create",{kind:"travel",to:"two",actors:["hero"],pace:"normal"},"player");
+const id=await send("create",{kind:"travel",to:"two",actors:["hero"],pace:"normal",createdBy:"gm",createdByName:"Мастер"},"player");
+eq(flags.state.active.createdBy,"player");eq(flags.state.active.createdByName,"Игрок <1>");
+eq(messages.get(data.requests[id].messageId).content.includes("Игрок &lt;1&gt;"),true);
 eq(flags.state.active.destination,"Неизвестный регион ?1");
 eq(token.x,0);eq(data.regions.two.explored,false);eq(clock,0);
 await reject(()=>send("create",{kind:"search",actors:["hero"]},"player"),/текущую заявку/);
 await reject(()=>send("approve",{requestId:id},"player"),/только мастеру/);
-users.set("coowner",{id:"coowner",active:true,isGM:false});
+users.set("coowner",{id:"coowner",name:"Владелец проводника",active:true,isGM:false});
 actor.testUserPermission=u=>["player","coowner"].includes(u.id)||u.isGM;
 await send("approve",{requestId:id});
 eq(data.requests[id].assignedUsers.hero,"player");
@@ -152,6 +154,21 @@ const guidedBefore=clock;await send("finish",{requestId:guided});eq(clock,guided
 await reject(()=>send("finish",{requestId:guided}),/не готова/);eq(clock,guidedBefore+8160);
 const guidedRoute=await send("create",{kind:"travel",to:"one",actors:["hero"]},"player");eq(data.requests[guidedRoute].actors,["guide"]);
 await send("approve",{requestId:guidedRoute,actors:["hero"],risk:false});eq(data.requests[guidedRoute].actors,["hero"]);eq(flags.state.guideId,"guide");await send("reject",{requestId:guidedRoute});
+await reject(()=>send("guide",{actorId:guide.id,guideOnly:true},"player"),/только мастеру/);
+await reject(()=>send("guide",{actorId:null,guideOnly:true}),/Назначьте проводника/);
+await send("guide",{actorId:guide.id,guideOnly:true});eq(flags.state.guideOnly,true);
+await reject(()=>send("guide",{actorId:"hero"},"player"),/только мастеру/);
+await reject(()=>send("create",{kind:"travel",to:"one",actors:["hero"]},"player"),/только проводник/);
+const guideRequest=await send("create",{kind:"travel",to:"one",actors:[guide.id]},"coowner");
+eq(flags.state.active.createdByName,"Владелец проводника");
+await reject(()=>send("journeyChoice",{requestId:guideRequest,choice:"rest"},"player"),/только проводник/);
+await send("reject",{requestId:guideRequest});
+const gmRequest=await send("create",{kind:"travel",to:"one",actors:["hero"]});
+eq(flags.state.active.createdByName,"Мастер");await send("reject",{requestId:gmRequest});
+group.system.playerCharacters.pop();
+await reject(()=>send("create",{kind:"travel",to:"one",actors:["hero"]},"player"),/только проводник/);
+group.system.playerCharacters.push(guide);
+await send("guide",{actorId:guide.id,guideOnly:false});
 group.system.playerCharacters.pop();const removedGuide=await send("create",{kind:"travel",to:"one",actors:["hero"]},"player");eq(data.requests[removedGuide].actors,["hero"]);await send("reject",{requestId:removedGuide});
 await send("guide",{actorId:null},"player");eq(flags.state.guideId,null);
 data.regions.two.description="Описание региона";data.regions.two.notes="SECRET_REGION_NOTES";
@@ -229,14 +246,14 @@ failExhaustion=true;await reject(()=>send("finish",{requestId:march,step:2}),/In
 await reject(()=>send("finish",{requestId:march,step:2}),/уже обработан/);await send("finish",{requestId:march,step:3});eq(data.requests[march].dc,12);eq(data.requests[march].outcomes,{});eq(flags.state.active.outcomes,{});
 await reject(()=>send("reject",{requestId:march}),/нужно завершить/);const c12=await send("reserve",{requestId:march,actorId:"hero"},"player");await reject(()=>send("resolve",{requestId:march,actorId:"hero",messageId:"con-save"},"player"),/не соответствует/);messages.set("con12",{id:"con12",author:{id:"player"},speaker:{actor:"hero"},rolls:[{total:1}],getFlag:()=>({requestId:march,lease:c12.lease,actorId:"hero"})});await send("resolve",{requestId:march,actorId:"hero",messageId:"con12"},"player");await send("finish",{requestId:march,step:4});eq(actor.system.attributes.exhaustion,2);await send("finish",{requestId:march,step:5});eq(data.requests[march].status,"done");eq(journey(scene).seconds,37800);eq(clock,marchStart+10800);eq(flags.state.currentRegionId,"two");
 await send("route",{from:"two",to:"one",seconds:1800,risk:false,road:false});const restedRoute=await send("create",{kind:"travel",to:"one",actors:["hero"]},"player");
-const camp=await send("journeyChoice",{requestId:restedRoute,choice:"rest"},"player");eq(data.requests[restedRoute].status,"suspended");eq(data.requests[camp].resumeId,restedRoute);await send("approve",{requestId:camp});
+const camp=await send("journeyChoice",{requestId:restedRoute,choice:"rest"},"player");eq(data.requests[camp].createdBy,"player");eq(data.requests[restedRoute].status,"suspended");eq(data.requests[camp].resumeId,restedRoute);await send("approve",{requestId:camp});
 const rp=await send("reserve",{requestId:camp,actorId:"hero"},"player");messages.set("rest-done",{id:"rest-done",type:"rest",author:{id:"player"},speaker:{actor:"hero"},system:{type:"long",request:{id:data.requests[camp].messageId}},getFlag:()=>null});await send("resolve",{requestId:camp,actorId:"hero",messageId:"rest-done"},"player");
 const restBefore=clock;await send("finish",{requestId:camp});eq(clock,restBefore+28800);eq(journey(scene).seconds,0);eq(data.requests[restedRoute].status,"pending");eq(data.activeId,restedRoute);await send("approve",{requestId:restedRoute});await send("finish",{requestId:restedRoute});eq(journey(scene).seconds,1800);eq(flags.state.currentRegionId,"one");
 clock+=86400;eq(journey(scene).seconds,1800);
 
 const short=await send("create",{kind:"short",actors:["hero"]},"player");await send("approve",{requestId:short});await send("reserve",{requestId:short,actorId:"hero"},"player");messages.set("short-rest",{id:"short-rest",type:"rest",author:{id:"player"},speaker:{actor:"hero"},system:{type:"short",request:{id:data.requests[short].messageId}},getFlag:()=>null});await send("resolve",{requestId:short,actorId:"hero",messageId:"short-rest"},"player");await send("finish",{requestId:short});eq(journey(scene).seconds,1800);
 const tpDay=await send("create",{kind:"teleport",to:"two",actors:["hero"]},"player");await send("approve",{requestId:tpDay});await send("finish",{requestId:tpDay});eq(journey(scene).seconds,1800);
-await send("journeySettings",{hours:7,minutes:0});await send("route",{from:"two",to:"one",seconds:7200,road:false,risk:true});const planned=await send("create",{kind:"travel",to:"one",actors:["hero"]},"player");await send("journeyChoice",{requestId:planned,choice:"rest"},"player");await send("approve",{requestId:planned});const np=await send("reserve",{requestId:planned,actorId:"hero"},"player");messages.set("plan-nav",{id:"plan-nav",author:{id:"player"},speaker:{actor:"hero"},rolls:[{total:1}],getFlag:()=>({requestId:planned,lease:np.lease,actorId:"hero"})});await send("resolve",{requestId:planned,actorId:"hero",messageId:"plan-nav"},"player");const planBefore=clock;await send("finish",{requestId:planned});const plannedRest=data.activeId;eq(data.requests[planned].status,"suspended");eq(data.requests[planned].elapsedSeconds,3600);eq(data.requests[plannedRest].resumeId,planned);eq(clock,planBefore+3600);await send("reject",{requestId:plannedRest});eq(data.activeId,planned);eq(data.requests[planned].status,"camp");eq(journey(scene).seconds,28800);const secondRest=await send("journeyChoice",{requestId:planned,choice:"rest"},"player");await send("approve",{requestId:secondRest});await send("reserve",{requestId:secondRest,actorId:"hero"},"player");messages.set("planned-rest",{id:"planned-rest",type:"rest",author:{id:"player"},speaker:{actor:"hero"},system:{type:"long",request:{id:data.requests[secondRest].messageId}},getFlag:()=>null});await send("resolve",{requestId:secondRest,actorId:"hero",messageId:"planned-rest"},"player");await send("finish",{requestId:secondRest});eq(data.requests[planned].status,"approved");eq(data.requests[planned].penalty,60);await reject(()=>send("reserve",{requestId:planned,actorId:"hero"},"player"),/бросок не нужен|уже выполнена/);await send("finish",{requestId:planned,step:1});eq(journey(scene).seconds,7920);eq(data.requests[planned].elapsedSeconds,11520);eq(clock,planBefore+3600+28800+7920);
+await send("journeySettings",{hours:7,minutes:0});await send("route",{from:"two",to:"one",seconds:7200,road:false,risk:true});const planned=await send("create",{kind:"travel",to:"one",actors:["hero"]},"player");await send("journeyChoice",{requestId:planned,choice:"rest"},"player");await send("approve",{requestId:planned});const np=await send("reserve",{requestId:planned,actorId:"hero"},"player");messages.set("plan-nav",{id:"plan-nav",author:{id:"player"},speaker:{actor:"hero"},rolls:[{total:1}],getFlag:()=>({requestId:planned,lease:np.lease,actorId:"hero"})});await send("resolve",{requestId:planned,actorId:"hero",messageId:"plan-nav"},"player");const planBefore=clock;await send("finish",{requestId:planned});const plannedRest=data.activeId;eq(data.requests[plannedRest].createdBy,"player");eq(data.requests[planned].status,"suspended");eq(data.requests[planned].elapsedSeconds,3600);eq(data.requests[plannedRest].resumeId,planned);eq(clock,planBefore+3600);await send("reject",{requestId:plannedRest});eq(data.activeId,planned);eq(data.requests[planned].status,"camp");eq(journey(scene).seconds,28800);const secondRest=await send("journeyChoice",{requestId:planned,choice:"rest"},"player");await send("approve",{requestId:secondRest});await send("reserve",{requestId:secondRest,actorId:"hero"},"player");messages.set("planned-rest",{id:"planned-rest",type:"rest",author:{id:"player"},speaker:{actor:"hero"},system:{type:"long",request:{id:data.requests[secondRest].messageId}},getFlag:()=>null});await send("resolve",{requestId:secondRest,actorId:"hero",messageId:"planned-rest"},"player");await send("finish",{requestId:secondRest});eq(data.requests[planned].status,"approved");eq(data.requests[planned].penalty,60);await reject(()=>send("reserve",{requestId:planned,actorId:"hero"},"player"),/бросок не нужен|уже выполнена/);await send("finish",{requestId:planned,step:1});eq(journey(scene).seconds,7920);eq(data.requests[planned].elapsedSeconds,11520);eq(clock,planBefore+3600+28800+7920);
 await send("route",{from:"one",to:"two",seconds:3600,risk:false});
 actor._source={system:{attributes:{movement:{walk:30}}}};actor.system.attributes.movement={walk:15};const slowParty=await send("create",{kind:"travel",to:"two",actors:["hero"],pace:"fast"},"player");eq(data.requests[slowParty].pace,"slow");await send("reject",{requestId:slowParty});delete actor._source;delete actor.system.attributes.movement;
 const privateMap=(await import("../scripts/private.mjs")).privateEntries;const shared={journeys:{group:{seconds:12345,revision:journey(scene).revision+1,profile:movementProfile()}},activeId:"busy",requests:{busy:{partyId:"group",status:"pending"}}};privateMap.set("other-map",{getFlag:(_id,key)=>key==="sceneId"?"other-map":shared});game.scenes.set("other-map",{id:"other-map"});eq(journey(scene).seconds,12345);await reject(()=>send("create",{kind:"travel",to:"one",actors:["hero"]},"player"),/другой сцене/);game.scenes.delete("other-map");privateMap.delete("other-map");
@@ -275,7 +292,7 @@ for(const userId of ["gm","player"]) {
   game.user=users.get(userId);
   const native={regions:{tools:Object.fromEntries(["polygon","rectangle","select","togglePalette"].map(name=>[name,{name}]))}};
   controls(native);const tools=native[ID].tools;
-  eq(Object.values(tools).filter(t=>t.visible!==false).sort((a,b)=>a.order-b.order).map(t=>t.name),userId==="gm"?["manager","hub","inspect","travel","togglePalette","preview"]:["hub","travel"]);
+  eq(Object.values(tools).filter(t=>t.visible!==false).sort((a,b)=>a.order-b.order).map(t=>t.name),userId==="gm"?["manager","hub","inspect","travel","describe","togglePalette","preview"]:["hub","travel","describe"]);
   eq(Object.hasOwn(tools,"connect"),false);
 }
 game.user=users.get("gm");
