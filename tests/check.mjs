@@ -292,7 +292,7 @@ for(const userId of ["gm","player"]) {
   game.user=users.get(userId);
   const native={regions:{tools:Object.fromEntries(["polygon","rectangle","select","togglePalette"].map(name=>[name,{name}]))}};
   controls(native);const tools=native[ID].tools;
-  eq(Object.values(tools).filter(t=>t.visible!==false).sort((a,b)=>a.order-b.order).map(t=>t.name),userId==="gm"?["manager","hub","inspect","travel","describe","togglePalette","preview"]:["hub","travel","describe"]);
+  eq(Object.values(tools).filter(t=>t.visible!==false).sort((a,b)=>a.order-b.order).map(t=>t.name),userId==="gm"?["manager","hub","inspect","travel","describe","showRoutes","togglePalette","preview"]:["hub","travel","describe","showRoutes"]);
   eq(Object.hasOwn(tools,"connect"),false);
 }
 game.user=users.get("gm");

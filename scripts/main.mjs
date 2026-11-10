@@ -5,6 +5,7 @@ import {controls,preMove,arrivalBanner,validateGeometry,prepareRegion,redraw,can
 import {initializePrivate,loadPrivate} from "./private.mjs";
 
 Hooks.once("init",()=>{
+  game.settings.register(ID,"showRoutes",{scope:"user",config:false,type:Boolean,default:true,onChange:redraw});
   game.settings.registerMenu(ID,"open",{name:`${TITLE} · Мастер`,label:"Открыть менеджер мастера",hint:"Регионы, маршруты, события и заявки.",icon:"fa-solid fa-map",type:PointcrawlApp,restricted:true});
   game.settings.registerMenu(ID,"centre",{name:`${TITLE} · Партия`,label:"Открыть центр путешествий",hint:"Действия партии и известные регионы.",icon:"fa-solid fa-campground",type:TravelCentre,restricted:false});
 });

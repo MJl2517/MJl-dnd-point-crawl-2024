@@ -6,6 +6,9 @@ const ev=(s,fn,args)=>b.eval(`(${fn.toString()})(${JSON.stringify(args??null)})`
 const pass=name=>{report.passed.push(name);console.log(`PASS ${name}`);};
 const until=(s,code)=>b.until(code,s,60000);
 const send=(s,action,args={})=>ev(s,async({action,args})=>(await import('/modules/mjl-pointcrawl/scripts/store.mjs')).request(action,args),{action,args});
+const routeToggle='#scene-controls-tools [data-tool=showRoutes]';
+const hasRouteBadges=`canvas.stage.getChildByName('mjl-pointcrawl')?.children.some(c=>c.name?.startsWith('route-time-'))`;
+const toggleRoutes=s=>b.eval(`document.querySelector('${routeToggle}').click()`,s);
 async function join(name,context) {
   const s=await b.page('http://127.0.0.1:30010/join',context);
   await until(s,'!!document.querySelector("select[name=userid]")');
@@ -71,7 +74,8 @@ try {
   await until(gm,`canvas.ready&&canvas.scene.id==='${f.scene}'`);
   await b.eval(`ui.controls.activate({control:'mjl-pointcrawl',tool:'inspect'})`,gm);
   await until(gm,`ui.controls.control?.name==='mjl-pointcrawl'&&canvas.regions.active&&!!document.querySelector('#scene-controls [data-tool=togglePalette]')`);
-  assert.deepEqual(await b.eval('[...document.querySelectorAll("#scene-controls-tools button[data-tool]")].map(b=>b.dataset.tool)',gm),['manager','hub','inspect','travel','describe','togglePalette','preview']);
+  assert.deepEqual(await b.eval('[...document.querySelectorAll("#scene-controls-tools button[data-tool]")].map(b=>b.dataset.tool)',gm),['manager','hub','inspect','travel','describe','showRoutes','togglePalette','preview']);
+  if(!await b.eval('game.settings.get("mjl-pointcrawl","showRoutes")',gm))await toggleRoutes(gm);
   await b.eval(`document.querySelector('#scene-controls [data-tool=togglePalette]').click()`,gm);
   await until(gm,'ui.placeablesPalette?.rendered&&ui.placeablesPalette.id==="region-palette"');
   await ev(gm,()=>{const input=ui.placeablesPalette.element.querySelector('color-picker input[type=color]');input.value='#2978d4';input.dispatchEvent(new Event('change',{bubbles:true}));});
@@ -145,13 +149,26 @@ try {
   await ev(player,async()=>{for(let i=0;i<3;i++){await ui.controls.activate({control:'tokens'});await ui.controls.activate({control:'mjl-pointcrawl',tool:'travel'});}});
   assert.equal(await b.eval('!!document.querySelector("[data-tool=togglePalette], [data-tool=inspect], [data-tool=select]")',player),false);
   assert.equal(await b.eval('ui.controls.tool.name',player),'travel');
+  if(!await b.eval('game.settings.get("mjl-pointcrawl","showRoutes")',player))await toggleRoutes(player);
   const publicData=await b.eval('JSON.stringify({scene:canvas.scene.toObject(),messages:game.messages.contents,journals:game.journal.contents})',player);
   for(const secret of [f.secretForest,'SECRET_CAVE_LOC','SECRET_NOTES_LOC','SECRET_SPRING_LOC','#b74fe7'])assert(!publicData.includes(secret),secret);
   for(const s of [gm,player])await until(s,`canvas.stage.getChildByName('mjl-pointcrawl')?.getChildByName('location-point-${spring.id}')?.children[0].geometry.graphicsData[0].fillStyle.color===0xef5466`);
   pass('A chosen location color survives point selection and renders on both clients while hidden colors stay private');
   pass('Player has travel and hub controls; palette and region selectors are hidden and secrets remain private');
   assert.equal((await marker(player,`location-name-${spring.id}`))?.text,'Родник');
+  await until(player,hasRouteBadges);
   const routeLabel=await ev(player,()=>canvas.stage.getChildByName('mjl-pointcrawl').children.filter(c=>c.name?.startsWith('route-time-')).map(c=>c.getChildByName('duration').text));assert.deepEqual(routeLabel,['1 ч 30 мин']);
+  const graphicsCount=s=>b.eval('canvas.stage.getChildByName("mjl-pointcrawl").children.filter(c=>c instanceof PIXI.Graphics).length',s);
+  const shown=await graphicsCount(player);
+  await toggleRoutes(player);
+  await until(player,`!game.settings.get("mjl-pointcrawl","showRoutes")&&!(${hasRouteBadges})`);
+  assert.equal(await graphicsCount(player),shown-2);
+  assert.equal(await b.eval(hasRouteBadges,gm),true);
+  assert(await marker(player,`region-point-${f.two}`));
+  await toggleRoutes(player);
+  await until(player,hasRouteBadges);
+  assert.equal(await graphicsCount(player),shown);
+  pass('The player can hide and restore route graphics and travel times without hiding destinations or changing the GM view');
   await send(gm,'region',{regionId:f.one,values:{showName:false}});
   await send(gm,'location',{regionId:f.one,locationId:spring.id,values:{...spring,showName:false}});
   await until(player,`!canvas.scene.getFlag('mjl-pointcrawl','state').regions.find(r=>r.id==='${f.one}').showName`);
@@ -247,7 +264,17 @@ try {
   assert.equal(await b.eval('canvas.scene.getFlag("mjl-pointcrawl","state").currentRegionId',player),f.two);
   pass('Inter-region arrival is also animated for GM and player');
   await b.screenshot('mjl-pointcrawl/dev/locations-player.png',player);
+  await b.eval('ui.controls.activate({control:"mjl-pointcrawl",tool:"travel"})',player);
+  await until(player,`!!document.querySelector('${routeToggle}')`);
+  await toggleRoutes(player);
+  await until(player,`!game.settings.get("mjl-pointcrawl","showRoutes")&&!(${hasRouteBadges})`);
   for(const s of [gm,player]) {await b.eval('globalThis.__arrivalReload=true;location.reload()',s);await b.until('!globalThis.__arrivalReload&&game?.ready&&canvas.ready',s,180000);assert.equal(await b.eval('!!document.querySelector("#mjl-pointcrawl-arrival")',s),false);}
+  await b.eval('ui.controls.activate({control:"mjl-pointcrawl",tool:"travel"})',player);
+  await until(player,`document.querySelector('${routeToggle}')?.getAttribute("aria-pressed")==="false"`);
+  assert.equal(await b.eval(hasRouteBadges,player),false);
+  await toggleRoutes(player);
+  await until(player,hasRouteBadges);
+  pass('Route visibility and its toolbar state survive reconnecting');
   pass('Arrival titles show the destination in both clients after movement, do not block clicks and do not replay after reload');
   const errors=b.events.filter(e=>e.method==='Runtime.exceptionThrown');assert.equal(errors.length,0,JSON.stringify(errors));pass('No uncaught JavaScript errors in location and movement workflows');report.success=true;report.fixture=f;
 } catch(e) {report.success=false;report.error=e.stack;console.error(e);process.exitCode=1;for(const [name,s] of [['locations-gm-failure',gm],['locations-player-failure',player]])if(s)await b.screenshot(`mjl-pointcrawl/dev/${name}.png`,s).catch(()=>{});

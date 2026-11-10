@@ -63,19 +63,21 @@ export function redraw() {
   const available=new Set([s.currentRegionId]);
   for(const e of edges) {if(e.from===s.currentRegionId)available.add(e.to);if(e.to===s.currentRegionId)available.add(e.from);}
   const visible=regions.filter(r=>r.center&&(secrets||r.explored||available.has(r.id)));
-  const outline=new PIXI.Graphics(),lines=new PIXI.Graphics();
-  outline.eventMode=lines.eventMode="none";
-  overlay.addChild(outline,lines);
-  const centers=new Map(visible.map(r=>[r.id,r.center]));
-  const publishedRoutes=new Map(s.routes.map(r=>[r.id,r]));
-  for(const e of edges) {
-    const a=centers.get(e.from),b=centers.get(e.to);
-    if(!a||!b)continue;
-    const color=e.road?0xf3cb7e:0xc3dcee, width=e.road?7:5;
-    outline.lineStyle(width+4,0x101921).moveTo(a.x,a.y).lineTo(b.x,b.y);
-    lines.lineStyle(width,color).moveTo(a.x,a.y).lineTo(b.x,b.y);
-    const seconds=e.normalSeconds??publishedRoutes.get(e.id)?.normalSeconds??e.seconds;
-    overlay.addChild(routeBadge(e,seconds,color,(a.x+b.x)/2,(a.y+b.y)/2));
+  if(game.settings.get(ID,"showRoutes")) {
+    const outline=new PIXI.Graphics(),lines=new PIXI.Graphics();
+    outline.eventMode=lines.eventMode="none";
+    overlay.addChild(outline,lines);
+    const centers=new Map(visible.map(r=>[r.id,r.center]));
+    const publishedRoutes=new Map(s.routes.map(r=>[r.id,r]));
+    for(const e of edges) {
+      const a=centers.get(e.from),b=centers.get(e.to);
+      if(!a||!b)continue;
+      const color=e.road?0xf3cb7e:0xc3dcee, width=e.road?7:5;
+      outline.lineStyle(width+4,0x101921).moveTo(a.x,a.y).lineTo(b.x,b.y);
+      lines.lineStyle(width,color).moveTo(a.x,a.y).lineTo(b.x,b.y);
+      const seconds=e.normalSeconds??publishedRoutes.get(e.id)?.normalSeconds??e.seconds;
+      overlay.addChild(routeBadge(e,seconds,color,(a.x+b.x)/2,(a.y+b.y)/2));
+    }
   }
   for(const r of visible) {
     const container=new PIXI.Container();container.position.set(r.center.x,r.center.y);
@@ -256,9 +258,13 @@ export function controls(controls) {
       inspect:tool("inspect","Выбрать регион и открыть информацию","fa-solid fa-location-dot",3,{interaction:true,control:true,visible:gm}),
       travel:tool("travel","Перейти к центру или локации","fa-solid fa-person-hiking",4,{interaction:true,control:true}),
       describe:tool("describe","Описание региона или локации","fa-solid fa-book-open",5,{interaction:true,control:true}),
-      togglePalette:{...original.tools.togglePalette,visible:gm,order:6,toggle:false,button:true,active:false,
+      showRoutes:tool("showRoutes","Показать пути","fa-solid fa-route",6,{toggle:true,active:game.settings.get(ID,"showRoutes"),
+        onChange:(_event,active)=>run(()=>game.settings.set(ID,"showRoutes",active).catch(error=>{
+          ui.controls.render({reset:true});throw error;
+        }))}),
+      togglePalette:{...original.tools.togglePalette,visible:gm,order:7,toggle:false,button:true,active:false,
         onChange:(_event,active)=>gm&&toggleRegionPalette(!active)},
-      preview:tool("preview","Предпросмотр вида игроков","fa-solid fa-eye",7,{button:true,visible:gm,onChange:()=>run(()=>useTool({action:"preview"}))})
+      preview:tool("preview","Предпросмотр вида игроков","fa-solid fa-eye",8,{button:true,visible:gm,onChange:()=>run(()=>useTool({action:"preview"}))})
     }};
 }
 
